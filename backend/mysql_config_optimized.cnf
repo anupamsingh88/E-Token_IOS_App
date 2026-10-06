@@ -1,0 +1,230 @@
+# MySQL Configuration Optimization for High Concurrency
+# Located: /etc/mysql/mysql.conf.d/mysqld.cnf (or /etc/my.cnf on some systems)
+#
+# For 5M+ users with 10K concurrent writes
+# Apply these changes and restart MySQL: sudo systemctl restart mysql
+
+[mysqld]
+
+# ============================================================================
+# CONNECTION & THREAD MANAGEMENT
+# ============================================================================
+
+# Maximum concurrent connections (default: 151)
+# With 10K concurrent users, need buffer for system operations
+max_connections = 1000
+
+# Maximum database size (packet size for bulk inserts)
+max_allowed_packet = 64M
+
+# Stack allocated per thread
+thread_stack = 256K
+
+# Cache threads for reuse instead of creating/destroying
+thread_cache_size = 400
+
+# Number of threads server should cache for reuse
+# Higher = less overhead of thread creation
+thread_handling = pool-of-threads
+# Optional thread pool config
+thread_pool_size = 16                    # CPU cores
+thread_pool_oversubscribe = 16          # Queue depth
+
+# ============================================================================
+# InnoDB ENGINE (Main storage engine for SFMS)
+# ============================================================================
+
+# Buffer pool: 50-80% of system RAM
+# For 32GB server: Set to 24-25GB
+innodb_buffer_pool_size = 24G
+
+# Buffer pool instances (divide buffer among multiple pools for less contention)
+# Rule: 1 instance per 1GB of buffer pool
+innodb_buffer_pool_instances = 24
+
+# Log file size (larger = longer recovery but fewer disk syncs)
+# Default: 12M, increase for high-write workloads
+innodb_log_file_size = 512M
+
+# Number of log files (usually 2)
+innodb_log_files_in_group = 2
+
+# How often to flush logs:
+# 0 = Never (lose data on crash)
+# 1 = Every commit (safest, slowest)
+# 2 = Every 1 second (recommended for high throughput)
+innodb_flush_log_at_trx_commit = 2
+
+# Write approach (O_DIRECT = bypass OS cache, faster)
+innodb_flush_method = O_DIRECT
+
+# Concurrency control
+# 0 = Auto-tune based on load (RECOMMENDED)
+innodb_thread_concurrency = 0
+
+# Lock wait timeout (default: 50s, too long)
+# Reduce to fail faster if deadlock likely
+innodb_lock_wait_timeout = 30
+
+# Write delay (0 = immediately, can group writes)
+# 0 recommended for critical writes
+innodb_flush_neighbors = 0
+
+# Autoinc lock style
+# 2 = Interleaved (better for high concurrency)
+innodb_autoinc_lock_mode = 2
+
+# Row format (DYNAMIC better for large blobs and varchar)
+innodb_default_row_format = DYNAMIC
+
+# ============================================================================
+# QUERY & TABLE CACHE
+# ============================================================================
+
+# Query cache (disabled by default in MySQL 8.0, enable if using 5.7)
+# Caches SELECT results; trade-off: helps reads but hurts writes
+query_cache_type = 0
+query_cache_size = 0
+
+# Table cache (max tables that can be open simultaneously)
+table_open_cache = 4096
+
+# Trigger purge when cache full
+table_open_cache_instances = 8
+
+# Definition cache (DDL cache)
+table_definition_cache = 2048
+
+# ============================================================================
+# BINLOG & REPLICATION (For read replicas)
+# ============================================================================
+
+# Enable binary logging (needed for replicas & PITR)
+log_bin = /var/log/mysql/mysql-bin
+
+# Binary log format
+# MIXED = automatic switch between STATEMENT and ROW
+# ROW = safest, best for replication accuracy
+binlog_format = ROW
+
+# Log row images (MINIMAL = smaller logs)
+binlog_row_image = MINIMAL
+
+# How long to keep binlogs (days)
+expire_logs_days = 7
+
+# Binlog cache (for uncommitted transactions)
+binlog_cache_size = 32K
+
+# Max binlog cache size
+max_binlog_cache_size = 512K
+
+# ============================================================================
+# PERFORMANCE SCHEMA (Monitoring)
+# ============================================================================
+
+# Enable performance schema for detailed monitoring
+performance_schema = ON
+
+performance_schema_max_table_instances = 12500
+
+# Adjust for memory constraints
+performance_schema_digests_size = 10000
+
+# ============================================================================
+# SLOW QUERY LOG (Debugging)
+# ============================================================================
+
+# Enable slow query logging
+slow_query_log = 1
+
+# Queries slower than this (in seconds) are logged
+long_query_time = 2
+
+# Log queries without indexes
+log_queries_not_using_indexes = 1
+
+# Slow query log location
+log_slow_queries = /var/log/mysql/slow.log
+
+# Number of rows to skip before logging
+log_throttle_queries_not_using_indexes = 10
+
+# ============================================================================
+# SORT & JOIN BUFFERS
+# ============================================================================
+
+# Per-connection sort buffer (for ORDER BY)
+# Increase if many large sorts
+sort_buffer_size = 2M
+
+# Per-connection temporary table size (for GROUP BY, temp tables)
+tmp_table_size = 32M
+
+# Global memory pool for temp tables
+max_heap_table_size = 32M
+
+# Join buffer for nested loop joins
+join_buffer_size = 256K
+
+# ============================================================================
+# NETWORK & TIMEOUTS
+# ============================================================================
+
+# Network write buffer
+net_write_timeout = 30
+
+# Network read timeout
+net_read_timeout = 30
+
+# Connection timeout
+connect_timeout = 10
+
+# Interactive timeout
+interactive_timeout = 28800
+
+# Non-interactive timeout
+wait_timeout = 28800
+
+# Max connections error
+max_connect_errors = 100000
+
+# ============================================================================
+# GENERAL LOGGING (Disable in production)
+# ============================================================================
+
+# Detailed query logging (VERY SLOW, disable for production)
+# general_log = 0
+# general_log_file = /var/log/mysql/general.log
+
+# ============================================================================
+# CHARACTER SET
+# ============================================================================
+
+character_set_server = utf8mb4
+collation_server = utf8mb4_unicode_ci
+character_set_client = utf8mb4
+
+# ============================================================================
+# DEFAULTS FOR SESSIONS
+# ============================================================================
+
+# Session sort buffer (override per-session if needed)
+# Can be increased per session if needed
+
+# ============================================================================
+# VALIDATION
+# ============================================================================
+
+# Check configuration syntax:
+# sudo mysqld --validate-config
+
+# Restart MySQL:
+# sudo systemctl restart mysql
+
+# Verify settings applied:
+# mysql -e "SHOW VARIABLES LIKE 'max_connections';"
+# mysql -e "SHOW VARIABLES LIKE 'innodb%';"
+
+# Monitor overall status:
+# mysqladmin status  # Shows uptime, queries/sec, etc

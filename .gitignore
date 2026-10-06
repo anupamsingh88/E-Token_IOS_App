@@ -1,0 +1,61 @@
+﻿# ==============================================
+# ROOT LEVEL: Ignore everything, then whitelist
+# ==============================================
+*
+!.gitignore
+!README.md
+
+# Whitelist only these 3 project folders
+!UPCDC_Urvarak/
+!Urvarak_Setu/
+!backend/
+
+# Allow all contents inside whitelisted folders
+!UPCDC_Urvarak/**
+!Urvarak_Setu/**
+!backend/**
+
+# ==============================================
+# SENSITIVE / SECRET FILES (never commit these)
+# ==============================================
+*.keystore
+*.jks
+firebase-key.json
+google-services.json
+GoogleService-Info.plist
+**/env.php
+**/db_connect.php
+
+# ==============================================
+# DEPENDENCIES (recreated via npm install)
+# ==============================================
+**/node_modules/
+
+# ==============================================
+# BUILD ARTIFACTS (recreated via build commands)
+# ==============================================
+**/build/
+**/.gradle/
+**/.kotlin/
+
+# ==============================================
+# IDE / TOOLING (personal editor settings)
+# ==============================================
+**/.idea/
+**/.expo/
+**/.vscode/
+
+# ==============================================
+# LOGS & TEMP FILES (not useful in repo)
+# ==============================================
+*.log
+**/android_log*.txt
+**/debug_input.log
+**/otp_response.log
+**/registration_debug.log
+**/retailer_login.log
+**/login_retailer.log
+**/extracted_*.txt
+**/scratch/
+**/logs/
+**/.tmp/
