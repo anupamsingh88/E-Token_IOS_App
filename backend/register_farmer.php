@@ -101,18 +101,39 @@ try {
         if (!is_dir($dir))
             mkdir($dir, 0755, true);
 
-        if (isset($_FILES[$key]) && $_FILES[$key]['error'] === UPLOAD_ERR_OK) {
-            $ext = pathinfo($_FILES[$key]['name'], PATHINFO_EXTENSION);
-            $filename = $key . '_' . $farmerId . '_' . time() . '.' . $ext;
-            if (move_uploaded_file($_FILES[$key]['tmp_name'], $dir . $filename)) {
-                $subDir = '';
-                if ($key === 'farmer_photo')
-                    $subDir = 'farmer_photos/';
-                elseif ($key === 'aadhaar_photo')
-                    $subDir = 'aadhaar_cards/';
-                elseif ($key === 'khatauni_photo')
-                    $subDir = 'khatauni_photos/';
-                $paths[$key] = 'uploads/' . $subDir . $filename;
+        if (isset($_FILES[$key])) {
+            if (is_array($_FILES[$key]['name'])) {
+                $uploadedPaths = [];
+                for ($i = 0; $i < count($_FILES[$key]['name']); $i++) {
+                    if ($_FILES[$key]['error'][$i] === UPLOAD_ERR_OK) {
+                        $ext = pathinfo($_FILES[$key]['name'][$i], PATHINFO_EXTENSION);
+                        if (!$ext) $ext = 'jpg'; // fallback
+                        $filename = $key . '_' . $farmerId . '_' . time() . '_' . $i . '.' . $ext;
+                        if (move_uploaded_file($_FILES[$key]['tmp_name'][$i], $dir . $filename)) {
+                            $subDir = '';
+                            if ($key === 'farmer_photo') $subDir = 'farmer_photos/';
+                            elseif ($key === 'aadhaar_photo') $subDir = 'aadhaar_cards/';
+                            elseif ($key === 'khatauni_photo') $subDir = 'khatauni_photos/';
+                            $uploadedPaths[] = 'uploads/' . $subDir . $filename;
+                        }
+                    }
+                }
+                if (!empty($uploadedPaths)) {
+                    $paths[$key] = implode(',', $uploadedPaths);
+                }
+            } else {
+                if ($_FILES[$key]['error'] === UPLOAD_ERR_OK) {
+                    $ext = pathinfo($_FILES[$key]['name'], PATHINFO_EXTENSION);
+                    if (!$ext) $ext = 'jpg';
+                    $filename = $key . '_' . $farmerId . '_' . time() . '.' . $ext;
+                    if (move_uploaded_file($_FILES[$key]['tmp_name'], $dir . $filename)) {
+                        $subDir = '';
+                        if ($key === 'farmer_photo') $subDir = 'farmer_photos/';
+                        elseif ($key === 'aadhaar_photo') $subDir = 'aadhaar_cards/';
+                        elseif ($key === 'khatauni_photo') $subDir = 'khatauni_photos/';
+                        $paths[$key] = 'uploads/' . $subDir . $filename;
+                    }
+                }
             }
         }
     }

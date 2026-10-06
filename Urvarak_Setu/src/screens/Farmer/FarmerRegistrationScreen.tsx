@@ -35,7 +35,7 @@ import {
 } from '../../constants';
 import { API_ENDPOINTS } from '../../config/config';
 import { apiFetch } from '../../utils/apiClient';
-import { pickFarmerPhoto, pickAadhaarPhoto, pickDocument, compressImage } from '../../utils/imagePickerUtils';
+import { pickFarmerPhoto, pickAadhaarPhoto, pickDocument, compressImage, pickMultipleDocuments, pickMultipleKhatauniPhotos } from '../../utils/imagePickerUtils';
 import { ModernAlert } from '../../components/ModernAlert';
 import { CameraIcon, CheckCircleIcon } from '../../components/PhotoUploadIcons';
 import { scale, verticalScale, moderateScale, isTablet, useResponsive } from '../../utils/responsive';
@@ -103,6 +103,7 @@ const PremiumUploadCard = ({
     onPress,
     error,
     isPDF = false,
+    onClear,
 }: {
     label: string,
     icon: (size: number, color: string) => React.ReactNode,
@@ -110,7 +111,8 @@ const PremiumUploadCard = ({
     onPress: () => void,
     error?: string,
     isPDF?: boolean,
-    fileName?: string
+    fileName?: string,
+    onClear?: () => void
 }) => (
     <View style={styles.uploadCardWrapper}>
         <TouchableOpacity
@@ -148,6 +150,11 @@ const PremiumUploadCard = ({
                 )}
             </View>
         </TouchableOpacity>
+        {onClear && value && (
+            <TouchableOpacity onPress={onClear} style={{ marginTop: 8, padding: 4 }}>
+                <Text style={{ textAlign: 'center', color: '#D32F2F', fontSize: 13, fontWeight: 'bold' }}>हटाएं</Text>
+            </TouchableOpacity>
+        )}
         {error ? <Text style={styles.errorText} numberOfLines={1}>{error}</Text> : null}
     </View>
 );
@@ -239,7 +246,7 @@ export default function FarmerRegistrationScreen({
 
     const [farmerPhoto, setFarmerPhoto] = useState<string | null>(null);
     const [aadhaarFile, setAadhaarFile] = useState<{ uri: string, name: string, isPDF: boolean } | null>(null);
-    const [khatauniFile, setKhatauniFile] = useState<{ uri: string, name: string, isPDF: boolean } | null>(null);
+    const [khatauniFiles, setKhatauniFiles] = useState<{ uri: string, name: string, isPDF: boolean }[]>([]);
     const [loading, setLoading] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -471,9 +478,25 @@ export default function FarmerRegistrationScreen({
         if (!type) return;
 
         if (source === 'pdf') {
+            if (type === 'khatauni') {
+                pickMultipleDocuments((files) => {
+                    setKhatauniFiles(prev => [...prev, ...files.map(f => ({ ...f, isPDF: true }))]);
+                }, (m) => showAlert('Error', m, 'error'));
+                return;
+            }
             pickDocument((uri, name) => {
                 if (type === 'aadhaar') setAadhaarFile({ uri, name, isPDF: true });
-                else if (type === 'khatauni') setKhatauniFile({ uri, name, isPDF: true });
+            }, (m) => showAlert('Error', m, 'error'));
+            return;
+        }
+
+        if (type === 'khatauni') {
+            pickMultipleKhatauniPhotos(source, async (uris: string[]) => {
+                const compressedUris = await Promise.all(uris.map(uri => compressImage(uri)));
+                setKhatauniFiles(prev => [
+                    ...prev, 
+                    ...compressedUris.map((compressed, i) => ({ uri: compressed, name: `Khatauni_${Date.now()}_${i}.jpg`, isPDF: false }))
+                ]);
             }, (m) => showAlert('Error', m, 'error'));
             return;
         }
@@ -484,7 +507,6 @@ export default function FarmerRegistrationScreen({
             const compressed = await compressImage(uri);
             if (type === 'photo') setFarmerPhoto(compressed);
             else if (type === 'aadhaar') setAadhaarFile({ uri: compressed, name: 'Aadhaar.jpg', isPDF: false });
-            else if (type === 'khatauni') setKhatauniFile({ uri: compressed, name: 'Khatauni.jpg', isPDF: false });
         }, (m) => showAlert('Error', m, 'error'));
     };
 
@@ -506,7 +528,7 @@ export default function FarmerRegistrationScreen({
         if (!formData.land_area.trim()) newErrors['land_area'] = 'क्षेत्रफल आवश्यक है';
         if (!farmerPhoto) newErrors['farmerPhoto'] = 'फोटो आवश्यक है';
         if (!aadhaarFile) newErrors['aadhaarPhoto'] = 'आधार फोटो आवश्यक है';
-        if (!khatauniFile) newErrors['khatauniPhoto'] = 'खतौनी / गाटा फोटो आवश्यक है';
+        if (khatauniFiles.length === 0) newErrors['khatauniPhoto'] = 'खतौनी / गाटा फोटो आवश्यक है';
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
@@ -559,12 +581,14 @@ export default function FarmerRegistrationScreen({
                 } as any);
             }
 
-            if (khatauniFile) {
-                formDataToSubmit.append('khatauni_photo', {
-                    uri: khatauniFile.uri,
-                    name: khatauniFile.name,
-                    type: khatauniFile.isPDF ? 'application/pdf' : 'image/jpeg',
-                } as any);
+            if (khatauniFiles.length > 0) {
+                khatauniFiles.forEach((file, index) => {
+                    formDataToSubmit.append('khatauni_photo[]', {
+                        uri: file.uri,
+                        name: file.name,
+                        type: file.isPDF ? 'application/pdf' : 'image/jpeg',
+                    } as any);
+                });
             }
 
             const response = await apiFetch(API_ENDPOINTS.registerFarmer, {
@@ -906,14 +930,22 @@ export default function FarmerRegistrationScreen({
                                             isPDF={aadhaarFile?.isPDF}
                                         />
 
-                                        <PremiumUploadCard
-                                            label="खतौनी"
-                                            icon={(s, c) => <DocumentIcon size={s} color={c} />}
-                                            value={khatauniFile}
-                                            onPress={() => setPickerType('khatauni')}
-                                            error={errors.khatauniPhoto}
-                                            isPDF={khatauniFile?.isPDF}
-                                        />
+                                        <View style={{ flex: 1 }}>
+                                            <PremiumUploadCard
+                                                label="खतौनी"
+                                                icon={(s, c) => <DocumentIcon size={s} color={c} />}
+                                                value={khatauniFiles.length > 0 ? khatauniFiles[0] : null}
+                                                onPress={() => setPickerType('khatauni')}
+                                                error={errors.khatauniPhoto}
+                                                isPDF={khatauniFiles.length > 0 && khatauniFiles[0].isPDF}
+                                                onClear={() => setKhatauniFiles([])}
+                                            />
+                                            {khatauniFiles.length > 0 && (
+                                                <Text style={{ textAlign: 'center', marginTop: 8, fontSize: 13, color: '#4CAF50', fontWeight: 'bold' }}>
+                                                    {khatauniFiles.length} दस्तावेज़ चयनित
+                                                </Text>
+                                            )}
+                                        </View>
                                     </View>
 
                                     {!isTabletMode && (

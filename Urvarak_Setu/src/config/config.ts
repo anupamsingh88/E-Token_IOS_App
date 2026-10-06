@@ -10,10 +10,11 @@
 
 // Base URL for backend API
 // IMPORTANT: Update this IP address if your local network IP changes
-export const API_BASE_URL = 'http://192.168.1.55:8080/backend';
+// export const API_BASE_URL = 'http://192.168.1.55:8080/backend';
+// export const API_BASE_URL = 'http://192.168.29.97:8080/backend';
 // export const API_BASE_URL = 'http://192.168.0.142/backend';
 // export const API_BASE_URL = 'https://ayodhyatourist.in/backend';
-// export const API_BASE_URL = 'https://risingayodhya.com/Urvarak/backend';
+export const API_BASE_URL = 'https://risingayodhya.com/Urvarak/backend';
 
 /**
  * API Endpoints
