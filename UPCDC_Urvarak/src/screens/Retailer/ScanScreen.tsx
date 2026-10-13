@@ -21,6 +21,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useIsFocused } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, FONT_SIZES, FONT_WEIGHTS, SHADOWS, BORDER_RADIUS } from '../../constants';
@@ -28,6 +29,7 @@ import { API_ENDPOINTS, API_BASE_URL } from '../../config/config';
 import ParticleBackground from '../../components/ParticleBackground';
 import { BlurView } from 'expo-blur';
 import AlertModal from '../../components/AlertModal';
+import { isDateMatch } from '../../utils/dateUtils';
 
 const { width, height } = Dimensions.get('window');
 
@@ -74,6 +76,7 @@ interface BookingListItem {
 import { RetailerLogger } from '../../utils/RetailerLogger';
 
 export default function ScanScreen({ onClose, retailerName, retailerId }: { onClose?: () => void, retailerName?: string, retailerId: string }) {
+    const isFocused = useIsFocused();
     const [permission, requestPermission] = useCameraPermissions();
     const [scanned, setScanned] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -121,7 +124,7 @@ export default function ScanScreen({ onClose, retailerName, retailerId }: { onCl
     useEffect(() => {
         const backAction = () => {
             if (showModal) {
-                setShowModal(false);
+                resetScanner();
                 return true;
             }
             if (showManualInput) {
@@ -248,12 +251,26 @@ export default function ScanScreen({ onClose, retailerName, retailerId }: { onCl
 
         RetailerLogger.info(`Token Scanned/Input: ${trimmedData}`, retailerId);
         setScanned(true);
+        // Set correctly based on whether it was scanned via camera or entered manually
         setScannedViaCamera(isCameraScan);
         setLoading(true);
 
+        // Robust token extraction if QR contains JSON
+        let tokenToQuery = trimmedData;
+        try {
+            const parsed = JSON.parse(trimmedData);
+            if (parsed && typeof parsed === 'object') {
+                if (parsed.token) tokenToQuery = String(parsed.token).trim();
+                else if (parsed.token_number) tokenToQuery = String(parsed.token_number).trim();
+                else if (parsed.id) tokenToQuery = String(parsed.id).trim();
+            }
+        } catch {
+            // raw token string
+        }
+
         try {
             const payload = {
-                token_number: trimmedData,
+                token_number: tokenToQuery,
                 retailer_id: retailerId
             };
             RetailerLogger.apiReq(API_ENDPOINTS.getBookingByToken, 'POST', payload, retailerId);
@@ -284,12 +301,14 @@ export default function ScanScreen({ onClose, retailerName, retailerId }: { onCl
             } else {
                 setAlertModal({ visible: true, type: 'error', title: 'टोकन अमान्य', message: result.message || 'यह टोकन नंबर हमारे डेटाबेस में नहीं मिला।' });
                 setScanned(false);
+                setScannedViaCamera(false);
             }
         } catch (error) {
             console.error('Scan Error:', error);
             RetailerLogger.apiErr(API_ENDPOINTS.getBookingByToken, 0, error, retailerId);
             setAlertModal({ visible: true, type: 'error', title: 'कनेक्शन एरर', message: 'सर्वर से संपर्क नहीं हो पाया। कृपया नेटवर्क की जाँच करें।' });
             setScanned(false);
+            setScannedViaCamera(false);
         } finally {
             setLoading(false);
         }
@@ -323,10 +342,16 @@ export default function ScanScreen({ onClose, retailerName, retailerId }: { onCl
             return;
         }
 
+        const todayStr = getISTDate();
+        const bookingDate = farmerData.farmer.booking_date;
+        const isDateDifferent = Boolean(bookingDate && !isDateMatch(bookingDate, todayStr) && bookingDate !== todayStr);
+
         setConfirmModal({
             visible: true,
-            title: 'पुष्टि करें',
-            message: 'क्या आप वितरित (Collect) करने की पुष्टि करना चाहते हैं?',
+            title: isDateDifferent ? 'तारीख भिन्न है - पुष्टि करें' : 'पुष्टि करें',
+            message: isDateDifferent
+                ? `इनकी बुकिंग ${bookingDate} की है (आज की नहीं)। क्या आप फिर भी वितरण (Collect) की पुष्टि करना चाहते हैं?`
+                : 'क्या आप वितरित (Collect) करने की पुष्टि करना चाहते हैं?',
             onConfirm: async () => {
                 setLoading(true);
                 const payload = {
@@ -416,96 +441,96 @@ export default function ScanScreen({ onClose, retailerName, retailerId }: { onCl
         <View style={styles.container}>
             <StatusBar barStyle={isScannerActive ? "light-content" : "dark-content"} />
 
-            {isScannerActive ? (
+            {isScannerActive && isFocused ? (
                 <View style={{ flex: 1 }}>
                     <CameraView
-                        style={styles.camera}
+                        style={StyleSheet.absoluteFillObject}
+                        facing="back"
                         onBarcodeScanned={scanned ? undefined : (e) => handleBarcodeScanned(e, true)}
                         barcodeScannerSettings={{
                             barcodeTypes: ["qr"],
                         }}
-                    >
-                        <View style={styles.overlay}>
-                            <View style={styles.scanHeader}>
-                                <TouchableOpacity
-                                    style={styles.closeBtnSmall}
-                                    onPress={() => setIsScannerActive(false)}
-                                >
-                                    <Ionicons name="arrow-back" size={24} color="#FFF" />
-                                </TouchableOpacity>
-                                <Text style={styles.scanHeaderText}>QR स्कैन करें</Text>
-                                <View style={{ width: 44 }} />
-                            </View>
+                    />
+                    <View style={styles.overlay} pointerEvents="box-none">
+                        <View style={styles.scanHeader}>
+                            <TouchableOpacity
+                                style={styles.closeBtnSmall}
+                                onPress={() => setIsScannerActive(false)}
+                            >
+                                <Ionicons name="arrow-back" size={24} color="#FFF" />
+                            </TouchableOpacity>
+                            <Text style={styles.scanHeaderText}>QR स्कैन करें</Text>
+                            <View style={{ width: 44 }} />
+                        </View>
 
-                            <View style={styles.scanMainContainer}>
-                                <View style={styles.focusedContainer}>
-                                    <Animated.View
-                                        style={[
-                                            styles.scanLine,
-                                            { transform: [{ translateY: scanLineTranslateY }] }
-                                        ]}
-                                    />
-                                    <View style={[styles.corner, styles.topLeft]} />
-                                    <View style={[styles.corner, styles.topRight]} />
-                                    <View style={[styles.corner, styles.bottomLeft]} />
-                                    <View style={[styles.corner, styles.bottomRight]} />
+                        <View style={styles.scanMainContainer}>
+                            <View style={styles.focusedContainer}>
+                                <Animated.View
+                                    style={[
+                                        styles.scanLine,
+                                        { transform: [{ translateY: scanLineTranslateY }] }
+                                    ]}
+                                />
+                                <View style={[styles.corner, styles.topLeft]} />
+                                <View style={[styles.corner, styles.topRight]} />
+                                <View style={[styles.corner, styles.bottomLeft]} />
+                                <View style={[styles.corner, styles.bottomRight]} />
 
-                                    {loading && (
-                                        <BlurView intensity={20} tint="dark" style={styles.loadingOverlay}>
-                                            <ActivityIndicator size="large" color="#FFF" />
-                                            <Text style={[styles.loadingText, { color: '#FFF' }]}>जाँच हो रही है...</Text>
-                                        </BlurView>
-                                    )}
-                                </View>
-
-                                {!showManualInput ? (
-                                    <TouchableOpacity
-                                        style={styles.premiumManualBtn}
-                                        onPress={() => {
-                                            setShowManualInput(true);
-                                            setScanned(false);
-                                        }}
-                                    >
-                                        <Ionicons name="pencil" size={18} color="#FFF" />
-                                        <Text style={styles.manualInputToggleText}>टोकन नंबर दर्ज करें</Text>
-                                    </TouchableOpacity>
-                                ) : (
-                                    <BlurView intensity={90} tint="light" style={styles.glassManualContainer}>
-                                        <TextInput
-                                            style={styles.premiumTextInput}
-                                            placeholder="यहाँ टोकन नंबर लिखें (उदा: 123456 या TKN-123456)"
-                                            placeholderTextColor="#94A3B8"
-                                            value={manualToken}
-                                            onChangeText={setManualToken}
-                                            autoFocus
-                                            keyboardType="default"
-                                            autoCapitalize="characters"
-                                            returnKeyType="search"
-                                            onSubmitEditing={handleManualSubmit}
-                                        />
-                                        <View style={styles.manualInputActions}>
-                                            <TouchableOpacity
-                                                style={styles.glassCancelBtn}
-                                                onPress={() => {
-                                                    setShowManualInput(false);
-                                                    setScanned(false);
-                                                }}
-                                            >
-                                                <Text style={styles.manualCancelText}>रद्द</Text>
-                                            </TouchableOpacity>
-                                            <TouchableOpacity
-                                                style={styles.glassSubmitBtn}
-                                                onPress={handleManualSubmit}
-                                            >
-                                                <Text style={styles.manualSubmitText}>सबमिट</Text>
-                                            </TouchableOpacity>
-                                        </View>
+                                {loading && (
+                                    <BlurView intensity={20} tint="dark" style={styles.loadingOverlay}>
+                                        <ActivityIndicator size="large" color="#FFF" />
+                                        <Text style={[styles.loadingText, { color: '#FFF' }]}>जाँच हो रही है...</Text>
                                     </BlurView>
                                 )}
-                                <Text style={styles.hintTextSmall}>क्यूआर कोड को बीच में रखें</Text>
                             </View>
+
+                            {!showManualInput ? (
+                                <TouchableOpacity
+                                    style={styles.premiumManualBtn}
+                                    onPress={() => {
+                                        setShowManualInput(true);
+                                        setScanned(false);
+                                    }}
+                                >
+                                    <Ionicons name="pencil" size={18} color="#FFF" />
+                                    <Text style={styles.manualInputToggleText}>टोकन नंबर दर्ज करें</Text>
+                                </TouchableOpacity>
+                            ) : (
+                                <BlurView intensity={90} tint="light" style={styles.glassManualContainer}>
+                                    <TextInput
+                                        style={styles.premiumTextInput}
+                                        placeholder="यहाँ टोकन नंबर लिखें (उदा: 123456 या TKN-123456)"
+                                        placeholderTextColor="#94A3B8"
+                                        value={manualToken}
+                                        onChangeText={setManualToken}
+                                        autoFocus
+                                        keyboardType="default"
+                                        autoCapitalize="characters"
+                                        returnKeyType="search"
+                                        onSubmitEditing={handleManualSubmit}
+                                    />
+                                    <View style={styles.manualInputActions}>
+                                        <TouchableOpacity
+                                            style={styles.glassCancelBtn}
+                                            onPress={() => {
+                                                setShowManualInput(false);
+                                                setScanned(false);
+                                            }}
+                                        >
+                                            <Text style={styles.manualCancelText}>रद्द</Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            style={styles.glassSubmitBtn}
+                                            onPress={handleManualSubmit}
+                                        >
+                                            <Text style={styles.manualSubmitText}>सबमिट</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                </BlurView>
+                            )}
+                            <Text style={styles.hintTextSmall}>क्यूआर कोड को बीच में रखें</Text>
                         </View>
-                    </CameraView>
+                    </View>
                 </View>
             ) : (
                 <FlatList
@@ -574,7 +599,12 @@ export default function ScanScreen({ onClose, retailerName, retailerId }: { onCl
 
                             <TouchableOpacity
                                 style={styles.hubScanCard}
-                                onPress={() => setIsScannerActive(true)}
+                                onPress={() => {
+                                    setScanned(false);
+                                    setScannedViaCamera(false);
+                                    setFarmerData(null);
+                                    setIsScannerActive(true);
+                                }}
                                 activeOpacity={0.9}
                             >
                                 <LinearGradient
@@ -727,16 +757,17 @@ export default function ScanScreen({ onClose, retailerName, retailerId }: { onCl
                                     (() => {
                                         const todayStr = getISTDate();
                                         const bookingDate = farmerData.farmer.booking_date; // Format YYYY-MM-DD
+                                        const isDateOk = !bookingDate || isDateMatch(bookingDate, todayStr) || bookingDate === todayStr;
 
-                                        if (bookingDate && bookingDate !== todayStr) {
+                                        if (bookingDate && !isDateOk) {
                                             return (
                                                 <View style={{ backgroundColor: '#FFF7ED', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#FFEDD5', marginTop: 15, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                                                     <View style={{ backgroundColor: '#F97316', padding: 6, borderRadius: 10 }}>
                                                         <MaterialCommunityIcons name="calendar-alert" size={20} color="#FFF" />
                                                     </View>
                                                     <View style={{ flex: 1 }}>
-                                                        <Text style={{ fontSize: 13, fontWeight: 'bold', color: '#9A3412' }}>गलत तारीख (Invalid Date)</Text>
-                                                        <Text style={{ fontSize: 12, color: '#C2410C' }}>इनकी बुकिंग {bookingDate} की है। आप आज वितरण (Collect) नहीं कर सकते।</Text>
+                                                        <Text style={{ fontSize: 13, fontWeight: 'bold', color: '#9A3412' }}>तारीख भिन्न है (Different Date)</Text>
+                                                        <Text style={{ fontSize: 12, color: '#C2410C' }}>इनकी बुकिंग {bookingDate} की है (आज की नहीं)।</Text>
                                                     </View>
                                                 </View>
                                             );
@@ -757,27 +788,42 @@ export default function ScanScreen({ onClose, retailerName, retailerId }: { onCl
                                     <View style={[styles.modalBtn, { backgroundColor: '#D1FAE5', borderWidth: 1, borderColor: '#059669' }]}>
                                         <Text style={{ color: '#059669', fontWeight: 'bold' }}>वितरण हो चुका</Text>
                                     </View>
-                                ) : (() => {
-                                    const todayStr = getISTDate();
-                                    const bookingDate = farmerData?.farmer.booking_date;
-                                    const isDateOk = !bookingDate || bookingDate === todayStr;
-
-                                    return (
-                                        <TouchableOpacity
-                                            style={[styles.modalBtn, styles.proceedBtn, (!isDateOk || !scannedViaCamera) && { backgroundColor: '#E2E8F0', borderColor: '#CBD5E1' }]}
-                                            onPress={handleConfirmCollection}
-                                            disabled={loading || !isDateOk || !scannedViaCamera}
-                                        >
-                                            {loading ? (
-                                                <ActivityIndicator color="#FFF" />
-                                            ) : (
-                                                <Text style={[styles.proceedBtnText, (!isDateOk || !scannedViaCamera) && { color: '#94A3B8' }]}>
-                                                    {scannedViaCamera ? 'वितरण की पुष्टि करें' : 'पुष्टि के लिए स्कैन करें'}
+                                ) : (
+                                    <TouchableOpacity
+                                        style={[
+                                            styles.modalBtn,
+                                            styles.proceedBtn,
+                                            !scannedViaCamera && { backgroundColor: '#E2E8F0', borderColor: '#CBD5E1' }
+                                        ]}
+                                        onPress={scannedViaCamera ? handleConfirmCollection : () => {
+                                            // When tapped while grayed out, directly launch camera scanner
+                                            setShowModal(false);
+                                            setScanned(false);
+                                            setScannedViaCamera(false);
+                                            setIsScannerActive(true);
+                                        }}
+                                        disabled={loading}
+                                        activeOpacity={scannedViaCamera ? 0.7 : 0.85}
+                                    >
+                                        {loading ? (
+                                            <ActivityIndicator color="#FFF" />
+                                        ) : (
+                                            <View style={{ alignItems: 'center' }}>
+                                                <Text style={[
+                                                    styles.proceedBtnText,
+                                                    !scannedViaCamera && { color: '#64748B' }
+                                                ]}>
+                                                    वितरण की पुष्टि करें
                                                 </Text>
-                                            )}
-                                        </TouchableOpacity>
-                                    );
-                                })()}
+                                                {!scannedViaCamera && (
+                                                    <Text style={{ fontSize: 11, color: '#94A3B8', marginTop: 2, fontWeight: '700' }}>
+                                                        (सत्यापन हेतु QR स्कैन करें)
+                                                    </Text>
+                                                )}
+                                            </View>
+                                        )}
+                                    </TouchableOpacity>
+                                )}
                             </View>
                         </LinearGradient>
                     </Animated.View>
@@ -945,11 +991,11 @@ const styles = StyleSheet.create({
         height: '100%',
     },
     camera: {
-        flex: 1,
+        ...StyleSheet.absoluteFillObject,
     },
     overlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.6)',
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0,0,0,0.3)', // reduced opacity
     },
     scanHeader: {
         flexDirection: 'row',
@@ -986,9 +1032,9 @@ const styles = StyleSheet.create({
         height: 260,
         borderRadius: 40,
         borderWidth: 2,
-        borderColor: 'rgba(255,255,255,0.2)',
+        borderColor: 'rgba(255,255,255,0.7)',
         overflow: 'hidden',
-        backgroundColor: 'rgba(0,0,0,0.2)',
+        backgroundColor: 'transparent',
     },
     scanLine: {
         height: 3,

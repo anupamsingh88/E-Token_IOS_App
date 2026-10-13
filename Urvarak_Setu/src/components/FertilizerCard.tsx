@@ -24,9 +24,10 @@ interface FertilizerCardProps {
     id: string;
     name: string;
     nameHindi: string;
-    type: 'urea' | 'dap' | 'npk' | 'mop';
+    type: string;
     price: number;
     availableQuantity: number;
+    imageUrl?: string;
     onPress: () => void;
 }
 
@@ -36,10 +37,11 @@ export default function FertilizerCard({
     type,
     price,
     availableQuantity,
+    imageUrl,
     onPress,
 }: FertilizerCardProps) {
-    const colors = FERTILIZER_COLORS[type];
-    const image = FERTILIZER_IMAGES[type];
+    const colors = FERTILIZER_COLORS[type as keyof typeof FERTILIZER_COLORS] || { badge: '#4B5563', gradient: ['#4b5563', '#9ca3af'] };
+    const image = imageUrl ? { uri: imageUrl } : (FERTILIZER_IMAGES[type] || require('../../assets/NPK_bori.png'));
     const isAvailable = availableQuantity > 0;
 
     return (

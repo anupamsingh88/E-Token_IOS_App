@@ -122,9 +122,9 @@ const PremiumUploadCard = ({
         >
             <View style={styles.uploadCardInner}>
                 {value && !isPDF ? (
-                    <Image 
-                        source={{ uri: typeof value === 'string' ? value : value.uri }} 
-                        style={styles.uploadCardFullPreview} 
+                    <Image
+                        source={{ uri: typeof value === 'string' ? value : value.uri }}
+                        style={styles.uploadCardFullPreview}
                     />
                 ) : (
                     <View style={[styles.uploadCardIconBG, value && styles.uploadCardIconBGSelected]}>
@@ -135,7 +135,7 @@ const PremiumUploadCard = ({
                         )}
                     </View>
                 )}
-                
+
                 <View style={styles.uploadCardContent}>
                     <Text style={styles.uploadCardLabel} numberOfLines={1}>{label}</Text>
                     <Text style={[styles.uploadCardStatus, value && styles.uploadCardStatusSelected]}>
@@ -257,6 +257,9 @@ export default function FarmerRegistrationScreen({
         visible: boolean, title: string, message: string, type: 'success' | 'error' | 'warning' | 'info',
         buttons?: any[], onClose?: () => void
     }>({ visible: false, title: '', message: '', type: 'info' });
+
+    const lastCheckedStatusRef = useRef({ mobile: '', aadhaar: '', registry_id: '' });
+    const hasShownStatusAlertRef = useRef(false);
 
     // Location Data States
     const [districts, setDistricts] = useState<LocationOption[]>([]);
@@ -494,7 +497,7 @@ export default function FarmerRegistrationScreen({
             pickMultipleKhatauniPhotos(source, async (uris: string[]) => {
                 const compressedUris = await Promise.all(uris.map(uri => compressImage(uri)));
                 setKhatauniFiles(prev => [
-                    ...prev, 
+                    ...prev,
                     ...compressedUris.map((compressed, i) => ({ uri: compressed, name: `Khatauni_${Date.now()}_${i}.jpg`, isPDF: false }))
                 ]);
             }, (m) => showAlert('Error', m, 'error'));
@@ -502,7 +505,7 @@ export default function FarmerRegistrationScreen({
         }
 
         const pickFn = type === 'photo' ? pickFarmerPhoto : pickAadhaarPhoto;
-        
+
         pickFn(source, async (uri: string) => {
             const compressed = await compressImage(uri);
             if (type === 'photo') setFarmerPhoto(compressed);
@@ -531,6 +534,47 @@ export default function FarmerRegistrationScreen({
         if (khatauniFiles.length === 0) newErrors['khatauniPhoto'] = 'खतौनी / गाटा फोटो आवश्यक है';
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
+    };
+
+    const checkPreRegistrationStatus = async () => {
+        const m = formData.mobile.trim();
+        const a = formData.aadhaar.trim();
+        const r = formData.registry_id.trim();
+
+        if (m.length < 10 && a.length < 12 && r.length === 0) return;
+        if (hasShownStatusAlertRef.current) return;
+
+        const lastChecked = lastCheckedStatusRef.current;
+        if (lastChecked.mobile === m && lastChecked.aadhaar === a && lastChecked.registry_id === r) {
+            return;
+        }
+
+        lastCheckedStatusRef.current = { mobile: m, aadhaar: a, registry_id: r };
+
+        try {
+            const response = await apiFetch(API_ENDPOINTS.checkFarmerStatus, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    mobile: m,
+                    aadhaar: a,
+                    registry_id: r
+                })
+            });
+            const result = await response.json();
+            
+            if (result.status === 'blocked') {
+                showAlert('पंजीकरण सीमा समाप्त', result.message, 'error');
+                hasShownStatusAlertRef.current = true;
+            } else if (result.status === 'rejected') {
+                showAlert('अस्वीकृत', `${result.message}\n\nकारण: ${result.rejection_reason}`, 'error');
+                hasShownStatusAlertRef.current = true;
+            }
+        } catch (error) {
+            console.error('Check status error:', error);
+        }
     };
 
     const handleRegister = async () => {
@@ -594,14 +638,11 @@ export default function FarmerRegistrationScreen({
             const response = await apiFetch(API_ENDPOINTS.registerFarmer, {
                 method: 'POST',
                 body: formDataToSubmit,
-                headers: {
-                    'Content-Type': 'multipart/form-data',
-                },
             });
 
             const result = await response.json();
             if (result.status === 'success' || result.success) {
-                showAlert('सफल', '24-48 घंटे में सत्यापन होगा', 'success', onBack);
+                showAlert('सफल', 'अपने सभी दस्तावेज़ अपने रिटेलर के पास ले जाकर पुष्टि कराएं।', 'success', onBack);
             } else {
                 showAlert('त्रुटि', result.message || 'पंजीकरण विफल रहा।', 'error');
             }
@@ -630,8 +671,8 @@ export default function FarmerRegistrationScreen({
                 bubbleColors={[MUSTARD, '#FFFFFF', '#FFD54F', 'rgba(255,255,255,0.3)']}
             >
                 <SafeAreaView style={styles.safeArea}>
-                    <KeyboardAvoidingView 
-                        behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
+                    <KeyboardAvoidingView
+                        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                         style={{ flex: 1 }}
                     >
                         <LinearGradient
@@ -649,8 +690,8 @@ export default function FarmerRegistrationScreen({
                             </View>
                         </LinearGradient>
 
-                        <ScrollView 
-                            contentContainerStyle={[styles.scrollContent, { flexGrow: 1 }]} 
+                        <ScrollView
+                            contentContainerStyle={[styles.scrollContent, { flexGrow: 1 }]}
                             showsVerticalScrollIndicator={false}
                             keyboardShouldPersistTaps="handled"
                         >
@@ -687,6 +728,7 @@ export default function FarmerRegistrationScreen({
                                                         required={false}
                                                         value={formData.mobile}
                                                         onChangeText={(v) => updateField('mobile', v.replace(/[^0-9]/g, ''))}
+                                                        onBlur={checkPreRegistrationStatus}
                                                         keyboardType="phone-pad"
                                                         maxLength={10}
                                                         icon={icon}
@@ -711,6 +753,7 @@ export default function FarmerRegistrationScreen({
                                                         required={false}
                                                         value={formData.aadhaar}
                                                         onChangeText={handleAadhaarChange}
+                                                        onBlur={checkPreRegistrationStatus}
                                                         keyboardType="number-pad"
                                                         maxLength={12}
                                                         icon={icon}
@@ -861,6 +904,7 @@ export default function FarmerRegistrationScreen({
                                                         required={true}
                                                         value={formData.registry_id}
                                                         onChangeText={(v) => updateField('registry_id', v)}
+                                                        onBlur={checkPreRegistrationStatus}
                                                         icon={icon}
                                                         containerStyle={styles.inputOverrides}
                                                         activeColor={MUSTARD}

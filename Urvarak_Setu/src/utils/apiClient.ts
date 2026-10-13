@@ -56,14 +56,18 @@ export async function apiFetch(
         headers.set('Authorization', `Bearer ${cachedToken}`);
     }
 
-    if (init?.body) {
-        if (init.body instanceof FormData) {
-            if (headers.get('Content-Type') === 'multipart/form-data') {
-                headers.delete('Content-Type');
-            }
-        } else if (!headers.has('Content-Type')) {
-            headers.set('Content-Type', 'application/json');
-        }
+    const isFormData = init?.body && (
+        init.body instanceof FormData ||
+        typeof (init.body as any)?._parts !== 'undefined' ||
+        typeof (init.body as any)?.append === 'function'
+    );
+
+    if (isFormData) {
+        // Never send explicit Content-Type with FormData; let fetch/XHR generate the multipart boundary
+        headers.delete('Content-Type');
+        headers.delete('content-type');
+    } else if (init?.body && !headers.has('Content-Type') && !headers.has('content-type')) {
+        headers.set('Content-Type', 'application/json');
     }
 
     const newInit: RequestInit = {

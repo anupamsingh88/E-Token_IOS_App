@@ -66,7 +66,7 @@ export default function TokenQRScreen({
         );
     }
 
-    const [status, requestPermission] = MediaLibrary.usePermissions();
+    const [status, requestPermission] = MediaLibrary.usePermissions({ writeOnly: true });
 
     const handleShare = async () => {
         try {

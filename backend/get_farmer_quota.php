@@ -65,41 +65,46 @@ try {
 
     $limits = [];
     while ($row = $limits_result->fetch_assoc()) {
-        $limits[$row['fertilizer_type']] = floatval($row['limit_per_hectare']);
+        $limits[strtolower($row['fertilizer_type'])] = floatval($row['limit_per_hectare']);
     }
 
     // Fallback defaults if no limits found
     if (empty($limits)) {
-        $limits = ['Urea' => 3.0, 'DAP' => 2.0, 'NPK' => 1.0, 'MOP' => 1.0];
+        $limits = ['urea' => 3.0, 'dap' => 2.0, 'npk' => 1.0, 'mop' => 1.0];
     }
 
     $fertilizers = [];
-    $fertilizer_types = ['Urea', 'DAP', 'NPK', 'MOP'];
-
-    $fertilizer_names = [
-        'Urea' => ['name' => 'Urea', 'nameHindi' => 'यूरिया', 'type' => 'urea'],
-        'DAP' => ['name' => 'DAP', 'nameHindi' => 'डीएपी', 'type' => 'dap'],
-        'NPK' => ['name' => 'NPK', 'nameHindi' => 'एनपीके', 'type' => 'npk'],
-        'MOP' => ['name' => 'MOP', 'nameHindi' => 'एमओपी', 'type' => 'mop']
-    ];
-
-    // Get fertilizer prices
-    $stmt = $conn->prepare("SELECT setting_key, setting_value FROM app_settings WHERE setting_key LIKE '%_price'");
-    $stmt->execute();
-    $price_result = $stmt->get_result();
+    // Fetch products dynamically
+    $prod_stmt = $conn->prepare("SELECT type_id, name, nameHindi, pricePerBag, imageUrl FROM fertilizer_products");
+    $prod_stmt->execute();
+    $prod_res = $prod_stmt->get_result();
+    $fertilizer_types = [];
+    $fertilizer_names = [];
     $prices = [];
-    while ($row = $price_result->fetch_assoc()) {
-        $type = str_replace('_price', '', $row['setting_key']);
-        $prices[$type] = intval($row['setting_value']);
+    while($prod = $prod_res->fetch_assoc()) {
+        $key = strtoupper($prod['type_id']);
+        $fertilizer_types[] = $key;
+        $fertilizer_names[$key] = [
+            'name' => $prod['name'],
+            'nameHindi' => $prod['nameHindi'],
+            'type' => $prod['type_id'],
+            'imageUrl' => $prod['imageUrl']
+        ];
+        $prices[strtolower($prod['type_id'])] = floatval($prod['pricePerBag']);
     }
 
+
     foreach ($fertilizer_types as $f_type) {
-        $limit_per_hectare = isset($limits[$f_type]) ? $limits[$f_type] : 0;
+        $limit_key = strtolower($f_type);
+        $limit_per_hectare = isset($limits[$limit_key]) ? $limits[$limit_key] : 0;
 
         // Calculate total allowed bags
         // Formula: Land Area * Limit per Hectare
         // Example: 2 Hectare * 3 Bags/Hectare = 6 Bags
         $allowed_bags = floor($land_area * $limit_per_hectare);
+        if ($limit_per_hectare > 0 && $allowed_bags < 1) {
+            $allowed_bags = 1;
+        }
 
         // Calculate used quantity from product_bookings table
         // Status 'Cancelled' does not count. 'Booked' and 'Collected' count.
@@ -131,6 +136,7 @@ try {
             'name' => $fertilizer_names[$f_type]['name'],
             'nameHindi' => $fertilizer_names[$f_type]['nameHindi'],
             'type' => $fertilizer_names[$f_type]['type'],
+            'imageUrl' => $fertilizer_names[$f_type]['imageUrl'],
             'pricePerBag' => $price,
             'quota' => [
                 'allowedQuantity' => $allowed_bags,
@@ -142,7 +148,7 @@ try {
 
     // 4. Get Daily and Pending booking counts for limits
     $today = date('Y-m-d');
-    
+
     // Daily count (Distinct orders on selected/today date)
     $stmt_daily = $conn->prepare("SELECT COUNT(DISTINCT CASE WHEN order_id IS NULL THEN id ELSE order_id END) as daily_count FROM product_bookings WHERE farmer_id = ? AND booking_date = ? AND status != 'Cancelled'");
     $stmt_daily->bind_param("ss", $farmer_id, $today);
@@ -170,13 +176,15 @@ try {
             'fertilizers' => $fertilizers,
             'retailer' => !empty($farmer['selected_retailer_id']) ? [
                 'id' => $farmer['selected_retailer_id'],
-                'name' => (function($v1, $v2, $v3) {
+                'name' => (function ($v1, $v2, $v3) {
                     // Treat 'NA', 'N/A', 'null' as empty
-                    $clean = function($s) { return (in_array(strtolower(trim($s ?? '')), ['na', 'n/a', 'null', ''])) ? '' : trim($s); };
+                    $clean = function ($s) {
+                        return (in_array(strtolower(trim($s ?? '')), ['na', 'n/a', 'null', ''])) ? '' : trim($s); };
                     return $clean($v1) ?: $clean($v2) ?: $clean($v3) ?: '';
                 })($farmer['r_name'], $farmer['selected_retailer_name'], $farmer['selected_retailer_id']),
-                'shopName' => (function($v1, $v2, $v3) {
-                    $clean = function($s) { return (in_array(strtolower(trim($s ?? '')), ['na', 'n/a', 'null', ''])) ? '' : trim($s); };
+                'shopName' => (function ($v1, $v2, $v3) {
+                    $clean = function ($s) {
+                        return (in_array(strtolower(trim($s ?? '')), ['na', 'n/a', 'null', ''])) ? '' : trim($s); };
                     return $clean($v1) ?: $clean($v2) ?: $clean($v3) ?: '';
                 })($farmer['r_shop'], $farmer['selected_retailer_name'], $farmer['selected_retailer_id']),
                 'address' => $farmer['r_address'] ?: '',

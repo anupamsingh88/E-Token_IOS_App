@@ -92,7 +92,7 @@ export default function SlotBookingScreen({
     const [stocks, setStocks] = useState<FertilizerStock[]>(() => {
         if (prefetchedData?.fertilizers?.length) {
             return prefetchedData.fertilizers.map(f => ({
-                id: f.name,
+                id: f.id || f.name,
                 name: f.name,
                 nameHindi: f.nameHindi,
                 price: f.pricePerBag,
@@ -246,22 +246,18 @@ export default function SlotBookingScreen({
 
                 if (cancelled) return; // Date changed while parsing — discard
 
-                let quotas: Record<string, number> = {};
-                let prices: Record<string, number> = {};
+                let newStocks: FertilizerStock[] = [];
 
                 if (quotaData.success && quotaData.data.fertilizers) {
-                    quotaData.data.fertilizers.forEach((f: any) => {
-                        quotas[f.name] = f.quota.remainingQuantity;
-                        prices[f.name] = f.pricePerBag;
-                    });
+                    newStocks = quotaData.data.fertilizers.map((f: any) => ({
+                        id: f.id || f.name, // prefer f.id from API (e.g., 'zinc'), fallback to f.name
+                        name: f.name,
+                        nameHindi: f.nameHindi,
+                        price: f.pricePerBag,
+                        availableStock: 0,
+                        userQuotaRemaining: f.quota.remainingQuantity
+                    }));
                 }
-
-                const newStocks: FertilizerStock[] = [
-                    { id: 'Urea', name: 'Urea', nameHindi: 'यूरिया', price: prices['Urea'] || 0, availableStock: 0, userQuotaRemaining: quotas['Urea'] || 0 },
-                    { id: 'DAP', name: 'DAP', nameHindi: 'डीएपी', price: prices['DAP'] || 0, availableStock: 0, userQuotaRemaining: quotas['DAP'] || 0 },
-                    { id: 'NPK', name: 'NPK', nameHindi: 'एनपीके', price: prices['NPK'] || 0, availableStock: 0, userQuotaRemaining: quotas['NPK'] || 0 },
-                    { id: 'MOP', name: 'MOP', nameHindi: 'एमओपी', price: prices['MOP'] || 0, availableStock: 0, userQuotaRemaining: quotas['MOP'] || 0 },
-                ];
 
                 if (quotaData.success && quotaData.data) {
                     const daily = quotaData.data.daily_booking_count || 0;

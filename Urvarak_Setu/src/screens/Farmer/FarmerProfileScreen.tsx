@@ -193,13 +193,6 @@ export default function FarmerProfileScreen({ farmerName, farmerId, onLogout, on
     };
 
     const handlePhotoChange = async () => {
-        // Request permission
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (status !== 'granted') {
-            Alert.alert('अनुमति आवश्यक', 'फोटो बदलने के लिए गैलरी की अनुमति दें।');
-            return;
-        }
-
         // Launch image picker
         const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,

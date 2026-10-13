@@ -49,9 +49,10 @@ $order_id = "";
 $farmer_id = "";
 $farmer_name = "";
 $farmer_mobile = "";
+$current_booking_date = "";
 
 // First try: Direct match
-$find_query = "SELECT b.order_id, b.farmer_id, f.name as farmer_name, f.mobile as farmer_mobile 
+$find_query = "SELECT b.order_id, b.farmer_id, b.booking_date, f.name as farmer_name, f.mobile as farmer_mobile 
               FROM product_bookings b 
               LEFT JOIN farmer_info f ON b.farmer_id = f.farmer_id 
               WHERE b.id = ? AND b.retailer_id = ?";
@@ -63,6 +64,7 @@ if ($find_stmt) {
     if ($row = $res->fetch_assoc()) {
         $order_id = $row['order_id'];
         $farmer_id = $row['farmer_id'];
+        $current_booking_date = $row['booking_date'];
         $farmer_name = $row['farmer_name'];
         $farmer_mobile = $row['farmer_mobile'];
     }
@@ -71,7 +73,7 @@ if ($find_stmt) {
 
 // Second try: If not found, try joining with retailer_info to resolve ID mismatch
 if (empty($order_id)) {
-    $alt_query = "SELECT b.order_id, b.farmer_id, f.name as farmer_name, f.mobile as farmer_mobile 
+    $alt_query = "SELECT b.order_id, b.farmer_id, b.booking_date, f.name as farmer_name, f.mobile as farmer_mobile 
                   FROM product_bookings b 
                   JOIN farmer_info f ON b.farmer_id = f.farmer_id 
                   JOIN retailer_info r ON b.retailer_id = r.retailer_id 
@@ -84,6 +86,7 @@ if (empty($order_id)) {
         if ($row = $res->fetch_assoc()) {
             $order_id = $row['order_id'];
             $farmer_id = $row['farmer_id'];
+            $current_booking_date = $row['booking_date'];
             $farmer_name = $row['farmer_name'];
             $farmer_mobile = $row['farmer_mobile'];
         }
@@ -126,8 +129,8 @@ if ($action === 'cancel' || $action === 'extend') {
         $items_list = [];
         while ($item = $items_res->fetch_assoc()) {
             $items_list[] = $item['quantity'] . " " . $item['product'];
-            $col_map = ['urea'=>'UREA_stock','dap'=>'DAP_stock','npk'=>'NPK_stock','mop'=>'MOP_stock'];
-            $prod_col = $col_map[strtolower($item['product'])] ?? (strtoupper($item['product']).'_stock');
+            $col_map = ['urea' => 'UREA_stock', 'dap' => 'DAP_stock', 'npk' => 'NPK_stock', 'mop' => 'MOP_stock'];
+            $prod_col = $col_map[strtolower($item['product'])] ?? (strtoupper($item['product']) . '_stock');
             $qty = (int) $item['quantity'];
             $old_date = $item['booking_date'];
 
@@ -176,21 +179,25 @@ if ($action === 'confirm' || $action === 'extend') {
     // Check for older pending bookings for this retailer
     // This ensures Farmer B cannot be approved if Farmer A is still Pending/Extended-Pending
     if ($action === 'confirm') {
-        $check_older = "SELECT f.name as older_farmer 
+        $check_older = "SELECT f.name as older_farmer, b.booking_date as older_date, b.id as older_id 
                        FROM product_bookings b
                        JOIN farmer_info f ON b.farmer_id = f.farmer_id
-                       WHERE b.retailer_id = ? AND b.status = 'Pending' AND b.id < ? AND b.order_id != ?
+                       WHERE b.retailer_id = ? AND b.status = 'Pending' 
+                       AND (b.booking_date < ? OR (b.booking_date = ? AND b.id < ?)) 
+                       AND b.order_id != ?
                        LIMIT 1";
         $co_stmt = $conn->prepare($check_older);
         if ($co_stmt) {
-            $co_stmt->bind_param("sis", $retailer_id_str, $booking_id, $order_id);
+            $co_stmt->bind_param("sssis", $retailer_id_str, $current_booking_date, $current_booking_date, $booking_id, $order_id);
             $co_stmt->execute();
             $older_res = $co_stmt->get_result();
             if ($older_row = $older_res->fetch_assoc()) {
                 $older_name = $older_row['older_farmer'];
+                $older_date = $older_row['older_date'];
+                $older_id = $older_row['older_id'];
                 echo json_encode([
-                    "status" => "error", 
-                    "message" => "कतार नियम: आप इसे अप्रूव नहीं कर सकते क्योंकि '$older_name' का पुराना अनुरोध अभी भी लंबित (Pending) है। कृपया पहले उसे हैंडल करें।"
+                    "status" => "error",
+                    "message" => "कतार नियम: आप इसे अप्रूव नहीं कर सकते क्योंकि '$older_name' का पुराना अनुरोध (तारीख: $older_date) अभी भी लंबित (Pending) है। (Debug: Current Date=$current_booking_date, ID=$booking_id)"
                 ]);
                 exit;
             }
@@ -224,7 +231,7 @@ $set_clause = "status = ?";
 $params = [$new_status];
 $types = "s";
 
-if (!empty($token_number)) { 
+if (!empty($token_number)) {
     $set_clause .= ", token_number = ?";
     $params[] = $token_number;
     $types .= "s";
@@ -255,17 +262,17 @@ if ($update_stmt) {
 
     if ($update_stmt->execute()) {
         $affected = $update_stmt->affected_rows;
-        
+
         // 4. Send SMS
         if (!empty($farmer_mobile)) {
             $display_date = ($action === 'extend') ? $new_booking_date : date('Y-m-d');
             $msg = get_booking_message($action, $farmer_name, $product_summary, $display_date, $token_number ?? "");
             send_notification_sms($farmer_mobile, $msg);
         }
-        
+
         echo json_encode([
-            "status" => "success", 
-            "message" => "Order $action successfully", 
+            "status" => "success",
+            "message" => "Order $action successfully",
             "token" => $token_number,
             "affected_rows" => $affected
         ]);

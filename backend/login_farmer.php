@@ -61,7 +61,7 @@ try {
 
     // Action 1: Check Farmer and MPIN Status
     if ($action === 'check_status') {
-        $stmt = $pdo->prepare("SELECT farmer_id, name, mobile, status, mpin FROM farmer_info WHERE mobile = ?");
+        $stmt = $pdo->prepare("SELECT farmer_id, name, mobile, status, mpin FROM farmer_info WHERE mobile = ? ORDER BY id DESC LIMIT 1");
         $stmt->execute([$mobile]);
         $farmer = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -101,9 +101,8 @@ try {
             exit;
         }
 
-        $hashedMpin = password_hash($mpin_submitted, PASSWORD_BCRYPT);
-        $updateStmt = $pdo->prepare("UPDATE farmer_info SET mpin = ? WHERE mobile = ?");
-        $updateStmt->execute([$hashedMpin, $mobile]);
+        $updateStmt = $pdo->prepare("UPDATE farmer_info SET mpin = ? WHERE mobile = ? ORDER BY id DESC LIMIT 1");
+        $updateStmt->execute([$mpin_submitted, $mobile]);
 
         echo json_encode([
             'success' => true,
@@ -116,7 +115,7 @@ try {
     // Fetch farmer details
     $stmt = $pdo->prepare("SELECT farmer_id, name, mobile, status, otp_code, otp_expiry, profile_photo, mpin 
                            FROM farmer_info 
-                           WHERE mobile = ?");
+                           WHERE mobile = ? ORDER BY id DESC LIMIT 1");
     $stmt->execute([$mobile]);
     $farmer = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -146,7 +145,7 @@ try {
             exit;
         }
 
-        $isValidPin = password_verify($mpin_submitted, $farmer['mpin']) || ($mpin_submitted === $farmer['mpin']);
+        $isValidPin = ($mpin_submitted === $farmer['mpin']);
         if (!$isValidPin) {
             echo json_encode(['success' => false, 'message' => 'गलत MPIN दर्ज किया गया है। पुनः प्रयास करें।']);
             exit;

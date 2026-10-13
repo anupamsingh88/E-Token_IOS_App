@@ -642,11 +642,11 @@ export default function BookingListScreen({ retailerId, retailerDetails, onBack 
         );
     };
 
-    // Pre-sort pending bookings oldest first and assign strict queue order dates
+    // Pre-sort pending bookings oldest first by booking_date and assign strict queue order dates
     const pendingWithQueueDates = useMemo(() => {
         const sorted = [...(bookings.pending || [])].sort((a, b) => {
-            const rawA = a.created_at || a.booking_date || a.date;
-            const rawB = b.created_at || b.booking_date || b.date;
+            const rawA = a.booking_date || a.created_at || a.date;
+            const rawB = b.booking_date || b.created_at || b.date;
             const parsedA = parseMixedDateFormat(rawA) || new Date(rawA?.replace(/-/g, '/') || 0);
             const parsedB = parseMixedDateFormat(rawB) || new Date(rawB?.replace(/-/g, '/') || 0);
             let dateA = parsedA.getTime();
@@ -659,7 +659,7 @@ export default function BookingListScreen({ retailerId, retailerDetails, onBack 
             return dateA - dateB;
         });
 
-        let runningMax = globalMaxExtendedDate;
+        let runningMax = ''; // Removed globalMaxExtendedDate so approved future dates don't block closer pending dates
         return sorted.map((item) => {
             const itemIsoDate = getISODate(item.booking_date);
             const highestPreceding = runningMax;
@@ -676,7 +676,7 @@ export default function BookingListScreen({ retailerId, retailerDetails, onBack 
                 isDateViolated
             };
         });
-    }, [bookings.pending, globalMaxExtendedDate, getISODate]);
+    }, [bookings.pending, getISODate]);
 
     const filteredPending = filterListByDate(pendingWithQueueDates);
     const filteredApproved = filterListByDate(bookings.approved);

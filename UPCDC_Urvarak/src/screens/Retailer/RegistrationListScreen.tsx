@@ -24,6 +24,8 @@ import { COLORS, SPACING, SHADOWS } from '../../constants';
 import { API_ENDPOINTS, API_BASE_URL } from '../../config/config';
 import AlertModal from '../../components/AlertModal';
 import ConfirmModal from '../../components/ConfirmModal';
+import DocumentViewerModal from '../../components/DocumentViewerModal';
+import { pickFromCamera, pickFromGallery, pickDocumentFile, PickedMedia } from '../../utils/mediaPickerUtils';
 const { width, height } = Dimensions.get('window');
 
 interface RegistrationListScreenProps {
@@ -52,11 +54,13 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
     const [showCalendar, setShowCalendar] = useState(false);
     const [calendarMonth, setCalendarMonth] = useState(new Date());
 
-    // Document Viewer state
-    const [docModal, setDocModal] = useState<{ visible: boolean, url: string, title: string }>({ visible: false, url: '', title: '' });
-
-    // PDF Viewer state
-    const [pdfModal, setPdfModal] = useState<{ visible: boolean, title: string, viewerUrl: string }>({ visible: false, title: '', viewerUrl: '' });
+    // Interactive Document & PDF Viewer state (with Zoom & Pan)
+    const [viewerModal, setViewerModal] = useState<{
+        visible: boolean;
+        documents: string | string[];
+        title: string;
+        farmerName: string;
+    }>({ visible: false, documents: '', title: '', farmerName: '' });
 
     // Custom Modal states
     const [confirmModal, setConfirmModal] = useState<{
@@ -69,6 +73,14 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
     // Edit Farmer state
     const [editModal, setEditModal] = useState<{ visible: boolean, data: any }>({ visible: false, data: null });
     const [editFields, setEditFields] = useState({ name: '', phone: '', aadhaar: '', khatauni_no: '', land_acres: '' });
+    const [editMedia, setEditMedia] = useState<{
+        photo: PickedMedia | null;
+        aadhaar: PickedMedia | null;
+        khatauni: PickedMedia[];
+    }>({ photo: null, aadhaar: null, khatauni: [] });
+
+    // Reject Reason state
+    const [rejectModal, setRejectModal] = useState<{ visible: boolean, data: any, reason: string }>({ visible: false, data: null, reason: '' });
 
     const fetchRegistrations = useCallback(async (isRefresh = false, isSilent = false, activeFlag = { active: true }) => {
         try {
@@ -158,65 +170,155 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
         });
     };
 
+    const handlePickPhoto = (source: 'camera' | 'gallery') => {
+        if (source === 'camera') {
+            pickFromCamera(
+                (media) => setEditMedia(prev => ({ ...prev, photo: media })),
+                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg })
+            );
+        } else {
+            pickFromGallery(
+                (media) => setEditMedia(prev => ({ ...prev, photo: media })),
+                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg })
+            );
+        }
+    };
+
+    const handlePickAadhaar = (type: 'camera' | 'gallery' | 'pdf') => {
+        if (type === 'camera') {
+            pickFromCamera(
+                (media) => setEditMedia(prev => ({ ...prev, aadhaar: media })),
+                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg })
+            );
+        } else if (type === 'gallery') {
+            pickFromGallery(
+                (media) => setEditMedia(prev => ({ ...prev, aadhaar: media })),
+                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg })
+            );
+        } else {
+            pickDocumentFile(
+                (media) => setEditMedia(prev => ({ ...prev, aadhaar: media })),
+                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg })
+            );
+        }
+    };
+
+    const handlePickKhatauni = (type: 'camera' | 'gallery' | 'pdf') => {
+        if (type === 'camera') {
+            pickFromCamera(
+                (media) => setEditMedia(prev => ({ ...prev, khatauni: [...prev.khatauni, media] })),
+                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg })
+            );
+        } else if (type === 'gallery') {
+            pickFromGallery(
+                (media) => setEditMedia(prev => ({ ...prev, khatauni: [...prev.khatauni, media] })),
+                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg })
+            );
+        } else {
+            pickDocumentFile(
+                (media) => setEditMedia(prev => ({ ...prev, khatauni: [...prev.khatauni, media] })),
+                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg })
+            );
+        }
+    };
+
     const handleUpdateFarmer = async () => {
         if (!editModal.data) return;
         const effectiveId = retailerId || retailerDetails?.retailer_id || retailerDetails?.id || 'UNKNOWN';
         try {
             setLoading(true);
-            const body = {
+            const formData = new FormData();
+            formData.append('farmer_id', editModal.data.id);
+            formData.append('name', editFields.name);
+            formData.append('mobile', editFields.phone);
+            formData.append('aadhaar', editFields.aadhaar);
+            formData.append('khatauni_number', editFields.khatauni_no);
+            formData.append('khasra_rukba', String(parseFloat(editFields.land_acres) || 0));
+
+            if (editMedia.photo) {
+                formData.append('farmer_photo', {
+                    uri: editMedia.photo.uri,
+                    name: editMedia.photo.name,
+                    type: editMedia.photo.type,
+                } as any);
+            }
+
+            if (editMedia.aadhaar) {
+                formData.append('aadhaar_photo', {
+                    uri: editMedia.aadhaar.uri,
+                    name: editMedia.aadhaar.name,
+                    type: editMedia.aadhaar.type,
+                } as any);
+            }
+
+            if (editMedia.khatauni.length > 0) {
+                editMedia.khatauni.forEach((kf) => {
+                    formData.append('khatauni_photo[]', {
+                        uri: kf.uri,
+                        name: kf.name,
+                        type: kf.type,
+                    } as any);
+                });
+            }
+
+            RetailerLogger.apiReq(API_ENDPOINTS.updateFarmer, 'POST', {
                 farmer_id: editModal.data.id,
-                name: editFields.name,
-                mobile: editFields.phone,
-                aadhaar: editFields.aadhaar,
-                khatauni_number: editFields.khatauni_no,
-                khasra_rukba: parseFloat(editFields.land_acres) || 0
-            };
-            RetailerLogger.apiReq(API_ENDPOINTS.updateFarmer, 'POST', body, effectiveId);
+                photoUpdated: !!editMedia.photo,
+                aadhaarUpdated: !!editMedia.aadhaar,
+                khatauniCount: editMedia.khatauni.length
+            }, effectiveId);
 
             const response = await apiFetch(API_ENDPOINTS.updateFarmer, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
+                body: formData,
             });
             const result = await response.json();
 
             RetailerLogger.apiRes(API_ENDPOINTS.updateFarmer, response.status, result, effectiveId);
 
             if (result.status === 'success') {
-                setAlertModal({ visible: true, type: 'success', title: 'सफल', message: 'किसान का विवरण अपडेट कर दिया गया है' });
+                setAlertModal({ visible: true, type: 'success', title: 'सफल', message: result.message || 'किसान का विवरण और मीडिया अपडेट कर दिया गया है' });
                 setEditModal({ visible: false, data: null });
-                fetchRegistrations();
+                fetchRegistrations(true);
             } else {
                 setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: result.message || 'अपडेट विफल रहा' });
             }
         } catch (error) {
             RetailerLogger.apiErr(API_ENDPOINTS.updateFarmer, 0, error, effectiveId);
-            setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: 'नेटवर्क त्रुटि' });
+            setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: 'नेटवर्क त्रुटि या अपडेट विफल' });
         } finally {
             setLoading(false);
         }
     };
 
-    const openDocument = (path: string, title: string) => {
-        if (!path) {
+    const submitReject = async () => {
+        if (!rejectModal.data) return;
+        if (!rejectModal.reason.trim()) {
+            setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: 'कृपया अस्वीकार करने का कारण लिखें' });
+            return;
+        }
+        setRejectModal({ ...rejectModal, visible: false });
+        
+        handleAction(
+            API_ENDPOINTS.manageRegistration,
+            { request_id: rejectModal.data.id, action: 'reject', retailer_id: retailerId, rejection_reason: rejectModal.reason.trim() },
+            'किसान को अस्वीकार कर दिया गया है',
+            'अस्वीकार करें?',
+            'क्या आप वाकई इस किसान के पंजीकरण को अस्वीकार करना चाहते हैं?'
+        );
+    };
+
+    const openDocument = (path: string, title: string, farmerName: string = '') => {
+        if (!path || !path.trim()) {
             setAlertModal({ visible: true, type: 'info', title: 'उपलब्ध नहीं', message: 'यह दस्तावेज़ अपलोड नहीं किया गया है' });
             return;
         }
-        const url = path.startsWith('http') ? path : `${API_BASE_URL}/${path}`;
-        const isPdf = path.toLowerCase().endsWith('.pdf');
-
-        if (isPdf) {
-            const googleViewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
-            setPdfModal({ visible: true, title, viewerUrl: googleViewerUrl });
-        } else {
-            setDocModal({ visible: true, url, title });
-        }
-    };
-
-    const openPdfInBrowser = () => {
-        Linking.openURL(pdfModal.viewerUrl).catch(() =>
-            setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: 'PDF खोलने में विफल' })
-        );
+        setViewerModal({
+            visible: true,
+            documents: path,
+            title,
+            farmerName,
+        });
     };
 
     const renderCalendarModal = () => {
@@ -297,12 +399,27 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
     };
 
     const startEdit = (item: any) => {
+        if (item.status !== 0) {
+            setAlertModal({
+                visible: true,
+                type: 'info',
+                title: 'संपादित नहीं किया जा सकता',
+                message: 'केवल लंबित (Pending) स्थिति में ही किसान का विवरण या मीडिया बदला जा सकता है। स्वीकृत होने के बाद कोई बदलाव संभव नहीं है।'
+            });
+            return;
+        }
+
         setEditFields({
             name: item.name,
             phone: item.phone,
             aadhaar: item.aadhaar || '',
             khatauni_no: item.khatauni_no || '',
             land_acres: String(item.land_acres || '0')
+        });
+        setEditMedia({
+            photo: null,
+            aadhaar: null,
+            khatauni: []
         });
         setEditModal({ visible: true, data: item });
     };
@@ -330,7 +447,14 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
                 )}
                 <View style={styles.cardHeader}>
                     <View style={styles.farmerInfo}>
-                        <View style={styles.avatarContainer}>
+                        <TouchableOpacity
+                            style={styles.avatarContainer}
+                            activeOpacity={0.8}
+                            onPress={() => {
+                                const photo = item.photo || item.farmer_photo || item.profile_photo;
+                                if (photo) openDocument(photo, 'प्रोफ़ाइल फोटो', item.name);
+                            }}
+                        >
                             {(item.photo || item.farmer_photo || item.profile_photo) ? (
                                 <Image
                                     source={{
@@ -345,7 +469,7 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
                             ) : (
                                 <MaterialCommunityIcons name="account" size={30} color={COLORS.primary} />
                             )}
-                        </View>
+                        </TouchableOpacity>
                         <View style={{ flex: 1 }}>
                             <Text style={styles.farmerName}>{item.name}</Text>
                             <Text style={styles.farmerDetail}>{item.phone}</Text>
@@ -378,18 +502,18 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
                 </View>
 
                 <View style={styles.docRow}>
-                    <TouchableOpacity style={styles.docButton} onPress={() => openDocument(item.aadhaar_photo, 'आधार कार्ड')}>
+                    <TouchableOpacity style={styles.docButton} onPress={() => openDocument(item.aadhaar_photo, 'आधार कार्ड', item.name)}>
                         <MaterialCommunityIcons name="card-account-details-outline" size={18} color={COLORS.primary} />
                         <Text style={styles.docButtonText}>आधार कार्ड</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.docButton} onPress={() => openDocument(item.khatauni_photo, 'खतौनी')}>
+                    <TouchableOpacity style={styles.docButton} onPress={() => openDocument(item.khatauni_photo, 'खतौनी', item.name)}>
                         <MaterialCommunityIcons name="file-document-outline" size={18} color={COLORS.primary} />
                         <Text style={styles.docButtonText}>खतौनी कॉपी</Text>
                     </TouchableOpacity>
                     {(item.photo || item.farmer_photo || item.profile_photo) && (
                         <TouchableOpacity
                             style={[styles.docButton, { backgroundColor: '#FFF7ED' }]}
-                            onPress={() => openDocument(item.photo || item.farmer_photo || item.profile_photo, 'प्रोफ़ाइल फोटो/Profile Photo')}
+                            onPress={() => openDocument(item.photo || item.farmer_photo || item.profile_photo, 'प्रोफ़ाइल फोटो', item.name)}
                         >
                             <MaterialCommunityIcons name="image-search-outline" size={18} color="#F97316" />
                             <Text style={[styles.docButtonText, { color: '#F97316' }]}>फोटो देखें</Text>
@@ -420,13 +544,7 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
                     <View style={styles.actionRow}>
                         <TouchableOpacity
                             style={[styles.actionBtn, styles.rejectBtn]}
-                            onPress={() => handleAction(
-                                API_ENDPOINTS.manageRegistration,
-                                { request_id: item.id, action: 'reject', retailer_id: retailerId },
-                                'किसान को अस्वीकार कर दिया गया है',
-                                'अस्वीकार करें?',
-                                'क्या आप वाकई इस किसान के पंजीकरण को अस्वीकार करना चाहते हैं?'
-                            )}
+                            onPress={() => setRejectModal({ visible: true, data: item, reason: '' })}
                         >
                             <Ionicons name="close-circle" size={18} color={COLORS.error} />
                             <Text style={[styles.btnText, { color: COLORS.error }]}>अस्वीकार</Text>
@@ -445,12 +563,15 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
                             <Text style={[styles.btnText, { color: COLORS.white }]}>स्वीकार करें</Text>
                         </TouchableOpacity>
                     </View>
+                ) : item.status === 1 ? (
+                    <View style={[styles.statusBadge, styles.approvedBadge]}>
+                        <Ionicons name="checkmark-circle" size={16} color={COLORS.success} />
+                        <Text style={[styles.statusText, { color: COLORS.success }]}>स्वीकृत</Text>
+                    </View>
                 ) : (
-                    <View style={[styles.statusBadge, item.status === 1 ? styles.approvedBadge : styles.rejectedBadge]}>
-                        <Ionicons name={item.status === 1 ? "checkmark-circle" : "close-circle"} size={16} color={item.status === 1 ? COLORS.success : COLORS.error} />
-                        <Text style={[styles.statusText, { color: item.status === 1 ? COLORS.success : COLORS.error }]}>
-                            {item.status === 1 ? 'स्वीकृत' : 'अस्वीकृत'}
-                        </Text>
+                    <View style={[styles.statusBadge, styles.rejectedBadge]}>
+                        <Ionicons name="close-circle" size={16} color={COLORS.error} />
+                        <Text style={[styles.statusText, { color: COLORS.error }]}>अस्वीकृत</Text>
                     </View>
                 )}
             </View>
@@ -539,101 +660,192 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
                 />
             )}
 
-            {/* Document Viewer Modal */}
-            <Modal visible={docModal.visible} transparent animationType="fade" onRequestClose={() => setDocModal({ ...docModal, visible: false })}>
-                <View style={styles.modalOverlay}>
-                    <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
-                    <View style={styles.docModalContent}>
-                        <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>{docModal.title}</Text>
-                            <TouchableOpacity onPress={() => setDocModal({ ...docModal, visible: false })}>
-                                <Ionicons name="close" size={28} color="#1e293b" />
-                            </TouchableOpacity>
-                        </View>
-                        <View style={styles.imageContainer}>
-                            <Image source={{ uri: docModal.url }} style={styles.fullImage} resizeMode="contain" />
-                        </View>
-                    </View>
-                </View>
-            </Modal>
+            {/* Interactive Document & PDF Viewer Modal with Zoom In/Out, Pan & Rotate */}
+            <DocumentViewerModal
+                visible={viewerModal.visible}
+                documents={viewerModal.documents}
+                title={viewerModal.title}
+                farmerName={viewerModal.farmerName}
+                onClose={() => setViewerModal({ ...viewerModal, visible: false })}
+            />
 
-            {/* PDF Preview Modal */}
-            <Modal visible={pdfModal.visible} transparent animationType="slide" onRequestClose={() => setPdfModal({ ...pdfModal, visible: false })}>
-                <View style={styles.modalOverlay}>
-                    <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
-                    <View style={styles.pdfModalContent}>
-                        {/* Header */}
-                        <View style={styles.modalHeader}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                                <View style={styles.pdfIconBox}>
-                                    <MaterialCommunityIcons name="file-pdf-box" size={24} color="#EF4444" />
-                                </View>
-                                <Text style={styles.modalTitle} numberOfLines={1}>{pdfModal.title}</Text>
-                            </View>
-                            <TouchableOpacity onPress={() => setPdfModal({ ...pdfModal, visible: false })}>
-                                <Ionicons name="close" size={28} color="#1e293b" />
-                            </TouchableOpacity>
-                        </View>
-
-                        {/* PDF Preview Card */}
-                        <View style={styles.pdfPreviewCard}>
-                            <MaterialCommunityIcons name="file-pdf-box" size={80} color="#EF4444" />
-                            <Text style={styles.pdfFileName}>{pdfModal.title}</Text>
-                            <Text style={styles.pdfSubText}>PDF दस्तावेज़</Text>
-
-                            <View style={styles.pdfInfoRow}>
-                                <MaterialCommunityIcons name="shield-check-outline" size={16} color={COLORS.success} />
-                                <Text style={styles.pdfInfoText}>सुरक्षित रूप से खुलेगा</Text>
-                            </View>
-                        </View>
-
-                        {/* Open Button */}
-                        <TouchableOpacity style={styles.pdfOpenBtn} onPress={openPdfInBrowser}>
-                            <MaterialCommunityIcons name="open-in-app" size={22} color="#fff" />
-                            <Text style={styles.pdfOpenBtnText}>PDF खोलें</Text>
-                        </TouchableOpacity>
-
-                        <Text style={styles.pdfNote}>
-                            📄 PDF सुरक्षित Viewer में खुलेगा
-                        </Text>
-                    </View>
-                </View>
-            </Modal>
-
-            {/* Edit Farmer Modal */}
+            {/* Edit Farmer & Media Modal */}
             <Modal visible={editModal.visible} transparent animationType="slide" onRequestClose={() => setEditModal({ ...editModal, visible: false })}>
                 <View style={styles.modalOverlay}>
                     <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
                     <View style={styles.editModalContent}>
                         <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>विवरण बदलें</Text>
+                            <Text style={styles.modalTitle}>विवरण व दस्तावेज़ बदलें</Text>
                             <TouchableOpacity onPress={() => setEditModal({ ...editModal, visible: false })}>
                                 <Ionicons name="close" size={28} color="#1e293b" />
                             </TouchableOpacity>
                         </View>
 
-                        <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
-                            {(editModal.data?.photo || editModal.data?.farmer_photo || editModal.data?.profile_photo) ? (
-                                <View style={{ alignItems: 'center', marginBottom: 20 }}>
-                                    <View style={styles.editAvatarContainer}>
-                                        <Image
-                                            source={{
-                                                uri: (editModal.data.photo || editModal.data.farmer_photo || editModal.data.profile_photo).startsWith('http')
-                                                    ? (editModal.data.photo || editModal.data.farmer_photo || editModal.data.profile_photo)
-                                                    : `${API_BASE_URL}/${editModal.data.photo || editModal.data.farmer_photo || editModal.data.profile_photo}`
-                                            }}
-                                            style={styles.fullImage}
-                                            resizeMode="cover"
-                                        />
+                        <ScrollView contentContainerStyle={{ paddingBottom: 30 }} showsVerticalScrollIndicator={false}>
+
+                            {/* Section: Farmer Photo */}
+                            <Text style={styles.mediaSectionTitle}>
+                                <MaterialCommunityIcons name="account-box-outline" size={18} color={COLORS.primary} /> किसान फोटो (Profile Photo)
+                            </Text>
+                            <View style={styles.mediaCard}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                                    <TouchableOpacity
+                                        style={styles.editAvatarContainer}
+                                        activeOpacity={0.8}
+                                        onPress={() => {
+                                            const p = editMedia.photo ? editMedia.photo.uri : (editModal.data?.photo || editModal.data?.farmer_photo || editModal.data?.profile_photo);
+                                            if (p) openDocument(p, 'प्रोफ़ाइल फोटो', editModal.data?.name);
+                                        }}
+                                    >
+                                        {editMedia.photo ? (
+                                            <Image source={{ uri: editMedia.photo.uri }} style={styles.fullImage} resizeMode="cover" />
+                                        ) : (editModal.data?.photo || editModal.data?.farmer_photo || editModal.data?.profile_photo) ? (
+                                            <Image
+                                                source={{
+                                                    uri: (editModal.data.photo || editModal.data.farmer_photo || editModal.data.profile_photo).startsWith('http')
+                                                        ? (editModal.data.photo || editModal.data.farmer_photo || editModal.data.profile_photo)
+                                                        : `${API_BASE_URL}/${editModal.data.photo || editModal.data.farmer_photo || editModal.data.profile_photo}`
+                                                }}
+                                                style={styles.fullImage}
+                                                resizeMode="cover"
+                                            />
+                                        ) : (
+                                            <MaterialCommunityIcons name="account" size={40} color="#CBD5E1" />
+                                        )}
+                                    </TouchableOpacity>
+                                    <View style={{ flex: 1 }}>
+                                        {editMedia.photo ? (
+                                            <View style={styles.mediaSelectedTag}>
+                                                <Ionicons name="checkmark-circle" size={16} color="#059669" />
+                                                <Text style={styles.mediaSelectedText} numberOfLines={1}>
+                                                    नई फोटो: {editMedia.photo.name}
+                                                </Text>
+                                                <TouchableOpacity onPress={() => setEditMedia(prev => ({ ...prev, photo: null }))} style={styles.removeMediaBtn}>
+                                                    <Ionicons name="close" size={14} color={COLORS.error} />
+                                                </TouchableOpacity>
+                                            </View>
+                                        ) : (
+                                            <Text style={{ fontSize: 12, color: '#64748b', fontWeight: '600' }}>
+                                                {(editModal.data?.photo || editModal.data?.farmer_photo || editModal.data?.profile_photo) ? 'वर्तमान फोटो मौजूद है' : 'कोई फोटो अपलोड नहीं है'}
+                                            </Text>
+                                        )}
+                                        <View style={[styles.mediaBtnRow, { marginTop: 8 }]}>
+                                            <TouchableOpacity style={styles.mediaActionBtn} onPress={() => handlePickPhoto('camera')}>
+                                                <Ionicons name="camera-outline" size={16} color={COLORS.primary} />
+                                                <Text style={styles.mediaActionBtnText}>कैमरा</Text>
+                                            </TouchableOpacity>
+                                            <TouchableOpacity style={styles.mediaActionBtn} onPress={() => handlePickPhoto('gallery')}>
+                                                <Ionicons name="images-outline" size={16} color={COLORS.primary} />
+                                                <Text style={styles.mediaActionBtnText}>गैलरी</Text>
+                                            </TouchableOpacity>
+                                        </View>
                                     </View>
                                 </View>
-                            ) : (
-                                <View style={{ alignItems: 'center', marginBottom: 20 }}>
-                                    <View style={[styles.editAvatarContainer, { backgroundColor: '#F1F5F9' }]}>
-                                        <MaterialCommunityIcons name="account" size={60} color="#CBD5E1" />
-                                    </View>
+                            </View>
+
+                            {/* Section: Aadhaar Card */}
+                            <Text style={styles.mediaSectionTitle}>
+                                <MaterialCommunityIcons name="card-account-details-outline" size={18} color={COLORS.primary} /> आधार कार्ड (Aadhaar Card)
+                            </Text>
+                            <View style={styles.mediaCard}>
+                                <View style={styles.mediaCardHeader}>
+                                    <Text style={{ fontSize: 12, color: '#64748b', fontWeight: '600' }}>
+                                        {editModal.data?.aadhaar_photo ? 'वर्तमान आधार मौजूद है' : 'कोई आधार अपलोड नहीं है'}
+                                    </Text>
+                                    {!!editModal.data?.aadhaar_photo && (
+                                        <TouchableOpacity
+                                            style={styles.viewCurrentBtn}
+                                            onPress={() => openDocument(editModal.data.aadhaar_photo, 'आधार कार्ड', editModal.data.name)}
+                                        >
+                                            <Ionicons name="eye-outline" size={14} color={COLORS.primary} />
+                                            <Text style={styles.viewCurrentBtnText}>वर्तमान देखें</Text>
+                                        </TouchableOpacity>
+                                    )}
                                 </View>
-                            )}
+                                {editMedia.aadhaar && (
+                                    <View style={styles.mediaSelectedTag}>
+                                        <Ionicons name={editMedia.aadhaar.isPdf ? "document-text" : "image"} size={16} color="#059669" />
+                                        <Text style={styles.mediaSelectedText} numberOfLines={1}>
+                                            नया आधार: {editMedia.aadhaar.name}
+                                        </Text>
+                                        <TouchableOpacity onPress={() => setEditMedia(prev => ({ ...prev, aadhaar: null }))} style={styles.removeMediaBtn}>
+                                            <Ionicons name="close" size={14} color={COLORS.error} />
+                                        </TouchableOpacity>
+                                    </View>
+                                )}
+                                <View style={styles.mediaBtnRow}>
+                                    <TouchableOpacity style={styles.mediaActionBtn} onPress={() => handlePickAadhaar('camera')}>
+                                        <Ionicons name="camera-outline" size={15} color={COLORS.primary} />
+                                        <Text style={styles.mediaActionBtnText}>कैमरा</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity style={styles.mediaActionBtn} onPress={() => handlePickAadhaar('gallery')}>
+                                        <Ionicons name="images-outline" size={15} color={COLORS.primary} />
+                                        <Text style={styles.mediaActionBtnText}>गैलरी</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity style={styles.mediaActionBtn} onPress={() => handlePickAadhaar('pdf')}>
+                                        <MaterialCommunityIcons name="file-pdf-box" size={16} color="#DC2626" />
+                                        <Text style={styles.mediaActionBtnText}>PDF फ़ाइल</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+
+                            {/* Section: Khatauni Copy */}
+                            <Text style={styles.mediaSectionTitle}>
+                                <MaterialCommunityIcons name="file-document-outline" size={18} color={COLORS.primary} /> खतौनी कॉपी (Khatauni Copy)
+                            </Text>
+                            <View style={styles.mediaCard}>
+                                <View style={styles.mediaCardHeader}>
+                                    <Text style={{ fontSize: 12, color: '#64748b', fontWeight: '600' }}>
+                                        {editModal.data?.khatauni_photo ? 'वर्तमान खतौनी मौजूद है' : 'कोई खतौनी अपलोड नहीं है'}
+                                    </Text>
+                                    {!!editModal.data?.khatauni_photo && (
+                                        <TouchableOpacity
+                                            style={styles.viewCurrentBtn}
+                                            onPress={() => openDocument(editModal.data.khatauni_photo, 'खतौनी कॉपी', editModal.data.name)}
+                                        >
+                                            <Ionicons name="eye-outline" size={14} color={COLORS.primary} />
+                                            <Text style={styles.viewCurrentBtnText}>वर्तमान देखें</Text>
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+                                {editMedia.khatauni.map((kItem, idx) => (
+                                    <View key={idx} style={[styles.mediaSelectedTag, { marginBottom: 4 }]}>
+                                        <Ionicons name={kItem.isPdf ? "document-text" : "image"} size={16} color="#059669" />
+                                        <Text style={styles.mediaSelectedText} numberOfLines={1}>
+                                            नयी खतौनी ({idx + 1}): {kItem.name}
+                                        </Text>
+                                        <TouchableOpacity
+                                            onPress={() => setEditMedia(prev => ({
+                                                ...prev,
+                                                khatauni: prev.khatauni.filter((_, i) => i !== idx)
+                                            }))}
+                                            style={styles.removeMediaBtn}
+                                        >
+                                            <Ionicons name="close" size={14} color={COLORS.error} />
+                                        </TouchableOpacity>
+                                    </View>
+                                ))}
+                                <View style={styles.mediaBtnRow}>
+                                    <TouchableOpacity style={styles.mediaActionBtn} onPress={() => handlePickKhatauni('camera')}>
+                                        <Ionicons name="camera-outline" size={15} color={COLORS.primary} />
+                                        <Text style={styles.mediaActionBtnText}>कैमरा</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity style={styles.mediaActionBtn} onPress={() => handlePickKhatauni('gallery')}>
+                                        <Ionicons name="images-outline" size={15} color={COLORS.primary} />
+                                        <Text style={styles.mediaActionBtnText}>गैलरी</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity style={styles.mediaActionBtn} onPress={() => handlePickKhatauni('pdf')}>
+                                        <MaterialCommunityIcons name="file-pdf-box" size={16} color="#DC2626" />
+                                        <Text style={styles.mediaActionBtnText}>PDF फ़ाइल</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+
+                            {/* Farmer Details Fields */}
+                            <Text style={[styles.mediaSectionTitle, { marginTop: 20 }]}>
+                                <Ionicons name="person-outline" size={17} color={COLORS.primary} /> किसान विवरण
+                            </Text>
+
                             <Text style={styles.inputLabel}>किसान का नाम</Text>
                             <TextInput style={styles.input} value={editFields.name} onChangeText={(t) => setEditFields({ ...editFields, name: t })} />
 
@@ -649,10 +861,40 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
                             <Text style={styles.inputLabel}>जमीन (हेक्टेयर में)</Text>
                             <TextInput style={styles.input} value={editFields.land_acres} onChangeText={(t) => setEditFields({ ...editFields, land_acres: t })} keyboardType="numeric" />
 
-                            <TouchableOpacity style={styles.saveBtn} onPress={handleUpdateFarmer}>
+                            <TouchableOpacity style={styles.saveBtn} onPress={handleUpdateFarmer} disabled={loading}>
                                 {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>बदलाव सुरक्षित करें</Text>}
                             </TouchableOpacity>
                         </ScrollView>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Reject Reason Modal */}
+            <Modal visible={rejectModal.visible} transparent animationType="slide" onRequestClose={() => setRejectModal({ ...rejectModal, visible: false })}>
+                <View style={styles.modalOverlay}>
+                    <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
+                    <View style={styles.editModalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={[styles.modalTitle, { color: COLORS.error }]}>अस्वीकार करने का कारण</Text>
+                            <TouchableOpacity onPress={() => setRejectModal({ ...rejectModal, visible: false })}>
+                                <Ionicons name="close" size={28} color="#1e293b" />
+                            </TouchableOpacity>
+                        </View>
+                        
+                        <View style={{ paddingBottom: 20 }}>
+                            <Text style={styles.inputLabel}>कृपया कारण लिखें कि यह आवेदन क्यों अस्वीकार किया जा रहा है:</Text>
+                            <TextInput 
+                                style={[styles.input, { height: 100, textAlignVertical: 'top' }]} 
+                                value={rejectModal.reason} 
+                                onChangeText={(t) => setRejectModal({ ...rejectModal, reason: t })} 
+                                multiline 
+                                placeholder="उदाहरण: आधार कार्ड की फोटो साफ नहीं है..."
+                            />
+                            
+                            <TouchableOpacity style={[styles.saveBtn, { backgroundColor: COLORS.error }]} onPress={submitReject}>
+                                <Text style={styles.saveBtnText}>अस्वीकार करें</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
                 </View>
             </Modal>
@@ -740,18 +982,7 @@ const styles = StyleSheet.create({
     todayBtn: { marginTop: 15, paddingVertical: 12, backgroundColor: '#F8FAFC', borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
     todayBtnText: { color: COLORS.primary, fontWeight: '800', fontSize: 14 },
     modalOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)', padding: 20 },
-    docModalContent: { width: '100%', height: '80%', backgroundColor: COLORS.white, borderRadius: 24, padding: 15, ...SHADOWS.large },
     editModalContent: { width: '100%', maxHeight: '90%', backgroundColor: COLORS.white, borderRadius: 24, padding: 20, ...SHADOWS.large },
-    pdfModalContent: { width: '100%', backgroundColor: COLORS.white, borderRadius: 24, padding: 20, ...SHADOWS.large },
-    pdfIconBox: { width: 40, height: 40, borderRadius: 10, backgroundColor: '#FEF2F2', justifyContent: 'center', alignItems: 'center' },
-    pdfPreviewCard: { alignItems: 'center', backgroundColor: '#FEF2F2', borderRadius: 18, padding: 30, marginBottom: 20, borderWidth: 1, borderColor: '#FECACA', gap: 8 },
-    pdfFileName: { fontSize: 18, fontWeight: '900', color: '#1e293b', textAlign: 'center' },
-    pdfSubText: { fontSize: 13, color: '#64748b', fontWeight: '600' },
-    pdfInfoRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 5, backgroundColor: '#ECFDF5', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
-    pdfInfoText: { fontSize: 12, color: COLORS.success, fontWeight: '700' },
-    pdfOpenBtn: { backgroundColor: '#EF4444', paddingVertical: 15, borderRadius: 15, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8, ...SHADOWS.medium },
-    pdfOpenBtnText: { color: '#fff', fontSize: 16, fontWeight: '900' },
-    pdfNote: { textAlign: 'center', fontSize: 12, color: '#94a3b8', marginTop: 12, fontWeight: '600' },
     modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', paddingBottom: 15 },
     modalTitle: { fontSize: 18, fontWeight: '900', color: COLORS.primary },
     imageContainer: { flex: 1, borderRadius: 15, overflow: 'hidden', backgroundColor: '#f8fafc' },
@@ -793,15 +1024,163 @@ const styles = StyleSheet.create({
     saveBtn: { backgroundColor: COLORS.primary, paddingVertical: 15, borderRadius: 15, alignItems: 'center', marginTop: 10, ...SHADOWS.medium },
     saveBtnText: { color: COLORS.white, fontSize: 16, fontWeight: '900' },
     editAvatarContainer: {
-        width: 120,
-        height: 120,
+        width: 100,
+        height: 100,
         borderRadius: 15,
         overflow: 'hidden',
-        borderWidth: 4,
+        borderWidth: 3,
         borderColor: '#FFEDD5',
         ...SHADOWS.medium,
         backgroundColor: '#F8FAFC',
         justifyContent: 'center',
         alignItems: 'center'
+    },
+    editNoticeBannerWarning: {
+        backgroundColor: '#FFFBEB',
+        borderColor: '#FCD34D',
+        borderWidth: 1,
+        borderRadius: 12,
+        padding: 10,
+        flexDirection: 'row',
+        gap: 8,
+        alignItems: 'center',
+        marginBottom: 15,
+    },
+    editNoticeTextWarning: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#B45309',
+        flex: 1,
+        lineHeight: 18,
+    },
+    editNoticeBannerInfo: {
+        backgroundColor: '#EFF6FF',
+        borderColor: '#BFDBFE',
+        borderWidth: 1,
+        borderRadius: 12,
+        padding: 10,
+        flexDirection: 'row',
+        gap: 8,
+        alignItems: 'center',
+        marginBottom: 15,
+    },
+    editNoticeTextInfo: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: COLORS.primary,
+        flex: 1,
+        lineHeight: 18,
+    },
+    mediaSectionTitle: {
+        fontSize: 14,
+        fontWeight: '900',
+        color: COLORS.textPrimary,
+        marginBottom: 8,
+        marginTop: 10,
+    },
+    mediaCard: {
+        backgroundColor: '#F8FAFC',
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
+        padding: 12,
+        marginBottom: 12,
+    },
+    mediaCardHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    viewCurrentBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        backgroundColor: '#EFF6FF',
+        borderRadius: 8,
+    },
+    viewCurrentBtnText: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: COLORS.primary,
+    },
+    mediaBtnRow: {
+        flexDirection: 'row',
+        gap: 8,
+        marginTop: 6,
+    },
+    mediaActionBtn: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#FFFFFF',
+        borderWidth: 1,
+        borderColor: '#CBD5E1',
+        paddingVertical: 7,
+        borderRadius: 10,
+        gap: 4,
+    },
+    mediaActionBtnText: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: COLORS.primary,
+    },
+    mediaSelectedTag: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#ECFDF5',
+        borderWidth: 1,
+        borderColor: '#A7F3D0',
+        paddingHorizontal: 8,
+        paddingVertical: 6,
+        borderRadius: 8,
+        marginTop: 6,
+        gap: 6,
+    },
+    mediaSelectedText: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: '#065F46',
+        flex: 1,
+    },
+    removeMediaBtn: {
+        padding: 2,
+        backgroundColor: '#FEE2E2',
+        borderRadius: 4,
+    },
+    editMediaApprovedBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#EFF6FF',
+        borderWidth: 1,
+        borderColor: '#BFDBFE',
+        paddingHorizontal: 10,
+        paddingVertical: 8,
+        borderRadius: 12,
+        gap: 5,
+    },
+    editMediaApprovedBtnText: {
+        fontSize: 12,
+        fontWeight: '800',
+        color: COLORS.primary,
+    },
+    mediaUpdatedBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#F1F5F9',
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
+        paddingHorizontal: 10,
+        paddingVertical: 8,
+        borderRadius: 12,
+        gap: 4,
+    },
+    mediaUpdatedBadgeText: {
+        fontSize: 11,
+        fontWeight: '800',
+        color: '#64748b',
     },
 });

@@ -11,53 +11,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 require 'db_connect.php';
 
 try {
-    // Fetch all fertilizer prices
-    // Assuming there's a fertilizer_pricing table or we use a predefined pricing structure
-
-    // For now, return standard government-regulated prices
-    // These should ideally come from a fertilizer_pricing table in database
-    $prices = [
-        [
-            'id' => 'urea',
-            'type' => 'urea',
-            'name' => 'Urea',
-            'nameHindi' => 'यूरिया',
-            'pricePerBag' => 266.50,
-            'bagWeight' => 50, // kg
-            'nutrientFormula' => 'N 46%',
-            'isAvailable' => true
-        ],
-        [
-            'id' => 'dap',
-            'type' => 'dap',
-            'name' => 'DAP',
-            'nameHindi' => 'डीएपी',
-            'pricePerBag' => 1350.00,
-            'bagWeight' => 50, // kg
-            'nutrientFormula' => 'N 18%, P 46%',
-            'isAvailable' => true
-        ],
-        [
-            'id' => 'npk',
-            'type' => 'npk',
-            'name' => 'NPK',
-            'nameHindi' => 'एनपीके',
-            'pricePerBag' => 1470.00,
-            'bagWeight' => 50, // kg
-            'nutrientFormula' => 'N 12%, P 32%, K 16%',
-            'isAvailable' => true
-        ],
-        [
-            'id' => 'mop',
-            'type' => 'mop',
-            'name' => 'MOP',
-            'nameHindi' => 'एमओपी',
-            'pricePerBag' => 1700.00,
-            'bagWeight' => 50, // kg
-            'nutrientFormula' => 'K 60%',
-            'isAvailable' => true
-        ]
-    ];
+    // Fetch all fertilizer prices from database
+    $stmt = $pdo->query("SELECT type_id as id, type_id as type, name, nameHindi, pricePerBag, imageUrl FROM fertilizer_products");
+    $prices = [];
+    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        $row['pricePerBag'] = (float)$row['pricePerBag'];
+        $prices[] = $row;
+    }
 
     echo json_encode([
         'success' => true,

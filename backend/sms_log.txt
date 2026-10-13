@@ -1,0 +1,27 @@
+[2026-10-08 00:25:59] TO: 7275095741 | MSG: Namaste Vinayak, aapki 1 Urea, 1 DAP ki booking (Date: 2026-10-08) confirm ho gayi hai. Aapka Token No: TKN-716572 hai.
+[2026-10-09 18:18:17] TO: 8765782107 | MSG: Namaste Anupam , khed hai ki aapka SFMS registration aswikar (reject) kar diya gaya hai. Kripya nikatam Kendra se sampark karein.
+[2026-10-09 18:23:02] TO: 7275095741 | MSG: Namaste Vinayak, khed hai ki aapka SFMS registration aswikar (reject) kar diya gaya hai. Kripya nikatam Kendra se sampark karein.
+[2026-10-09 23:22:32] TO: 7275095741 | MSG: Namaste Vinayak , khed hai ki aapka SFMS registration aswikar (reject) kar diya gaya hai. Kripya nikatam Kendra se sampark karein.
+[2026-10-09 23:34:37] TO: 7275095741 | MSG: Namaste Vinu, khed hai ki aapka SFMS registration aswikar (reject) kar diya gaya hai. Kripya nikatam Kendra se sampark karein.
+[2026-10-09 23:49:37] TO: 7275095741 | MSG: Namaste Vinayak, khed hai ki aapka SFMS registration aswikar (reject) kar diya gaya hai. Kripya nikatam Kendra se sampark karein.
+[2026-10-09 23:53:58] TO: 7275095741 | MSG: Namaste Vinayak, khed hai ki aapka SFMS registration aswikar (reject) kar diya gaya hai. Kripya nikatam Kendra se sampark karein.
+[2026-10-10 00:08:06] TO: 7275095741 | MSG: Namaste Vinayak, khed hai ki aapka SFMS registration aswikar (reject) kar diya gaya hai. Kripya nikatam Kendra se sampark karein.
+[2026-10-10 00:09:24] TO: 7275095741 | MSG: Namaste Vinayak , khed hai ki aapka SFMS registration aswikar (reject) kar diya gaya hai. Kripya nikatam Kendra se sampark karein.
+[2026-10-10 00:10:24] TO: 5499864949 | MSG: Namaste Vinayak, khed hai ki aapka SFMS registration aswikar (reject) kar diya gaya hai. Kripya nikatam Kendra se sampark karein.
+[2026-10-10 00:17:41] TO: 7275095698 | MSG: Namaste Vinayak , khed hai ki aapka SFMS registration aswikar (reject) kar diya gaya hai. Kripya nikatam Kendra se sampark karein.
+[2026-10-10 00:24:56] TO: 8765782107 | MSG: Namaste Anupam , khed hai ki aapka SFMS registration aswikar (reject) kar diya gaya hai. Kripya nikatam Kendra se sampark karein.
+[2026-10-10 00:28:08] TO: 9876543120 | MSG: Namaste Anupam, khed hai ki aapka SFMS registration aswikar (reject) kar diya gaya hai. Kripya nikatam Kendra se sampark karein.
+[2026-10-10 09:10:35] TO: 8765782107 | MSG: Namaste Anupam, khed hai ki aapka SFMS registration aswikar (reject) kar diya gaya hai. Kripya nikatam Kendra se sampark karein.
+[2026-10-10 12:09:36] TO: 8765782107 | MSG: Namaste Anupam, aapka SFMS registration safaltapurvak approve ho gaya hai. Ab aap khaad ki booking kar sakte hain.
+[2026-10-10 13:23:06] TO: 8765782107 | MSG: Namaste Anupam, aapka SFMS registration safaltapurvak approve ho gaya hai. Ab aap khaad ki booking kar sakte hain.
+[2026-10-10 13:24:23] TO: 8765782107 | MSG: Namaste Anupam, aapki 1 Urea, 1 DAP ki booking (Date: 2026-10-10) confirm ho gayi hai. Aapka Token No: TKN-796139 hai.
+[2026-10-10 13:40:07] TO: 7275095741 | MSG: Namaste Vinayak, khed hai ki aapka SFMS registration aswikar (reject) kar diya gaya hai. Kripya nikatam Kendra se sampark karein.
+[2026-10-10 13:52:15] TO: 7275095741 | MSG: Namaste Vinayak, aapka SFMS registration safaltapurvak approve ho gaya hai. Ab aap khaad ki booking kar sakte hain.
+[2026-10-10 14:01:52] TO: 8765782107 | MSG: Namaste Anupam, aapki 1 Urea, 1 DAP ki booking (Date: 2026-10-10) confirm ho gayi hai. Aapka Token No: TKN-189825 hai.
+[2026-10-10 14:05:43] TO: 9554969778 | MSG: Namaste Suraj Gupta , aapka SFMS registration safaltapurvak approve ho gaya hai. Ab aap khaad ki booking kar sakte hain.
+[2026-10-10 14:11:08] TO: 9554969778 | MSG: Namaste Suraj Gupta , aapki 2 Urea ki booking (Date: 2026-10-10) confirm ho gayi hai. Aapka Token No: TKN-460766 hai.
+[2026-10-10 14:11:36] TO: 9554969778 | MSG: Namaste Suraj Gupta , aapki 1 Urea, 1 DAP ki booking ka samay badha diya gaya hai. Kripya app mein naya samay check karein.
+[2026-10-11 12:37:57] TO: 9554969778 | MSG: Namaste Suraj Gupta , aapki 1 Urea, 1 DAP, 1 NPK ki booking (Date: 2026-10-11) confirm ho gayi hai. Aapka Token No: TKN-505282 hai.
+[2026-10-11 15:18:50] TO: 6868685949 | MSG: Namaste Anuapm, aapka SFMS registration safaltapurvak approve ho gaya hai. Ab aap khaad ki booking kar sakte hain.
+[2026-10-11 16:14:05] TO: 8765782107 | MSG: Namaste Anupam, aapki 1 Urea ki booking (Date: 2026-10-11) cancel kar di gayi hai.
+[2026-10-11 16:14:10] TO: 8765782107 | MSG: Namaste Anupam, aapki 1 Urea, 1 DAP ki booking ka samay badha diya gaya hai. Kripya app mein naya samay check karein.

@@ -208,6 +208,7 @@ const MemoizedFarmerHomeTab = React.memo(({
                                 type={fertilizer.type}
                                 price={fertilizer.pricePerBag}
                                 availableQuantity={fertilizer.quota.remainingQuantity}
+                                imageUrl={fertilizer.imageUrl}
                                 onPress={() => onFertilizerPress(fertilizer.id)}
                             />
                         ))}

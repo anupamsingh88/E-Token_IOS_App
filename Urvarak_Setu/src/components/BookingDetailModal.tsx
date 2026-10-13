@@ -32,7 +32,7 @@ interface BookingDetailModalProps {
 
 export default function BookingDetailModal({ visible, booking, onClose }: BookingDetailModalProps) {
     const qrRef = useRef<any>(null);
-    const [status, requestPermission] = MediaLibrary.usePermissions();
+    const [status, requestPermission] = MediaLibrary.usePermissions({ writeOnly: true });
 
     // Styled alert state
     const [alertVisible, setAlertVisible] = useState(false);
@@ -333,14 +333,14 @@ const styles = StyleSheet.create({
         fontSize: FONT_SIZES.sm,
         color: COLORS.textSecondary,
         textTransform: 'uppercase',
-        letterSpacing: 2,
+        letterSpacing: 1,
     },
     tokenValue: {
-        fontSize: moderateScale(28),
+        fontSize: moderateScale(26),
         fontWeight: 'bold',
         color: COLORS.primary,
         marginTop: 4,
-        letterSpacing: 2,
+        letterSpacing: 1,
     },
     detailsContainer: {
         width: '100%',
@@ -353,17 +353,19 @@ const styles = StyleSheet.create({
     detailRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        marginBottom: SPACING.md,
+        marginBottom: SPACING.sm,
     },
     label: {
-        fontSize: FONT_SIZES.md,
+        fontSize: FONT_SIZES.sm,
         color: COLORS.textSecondary,
         fontWeight: '500',
+        letterSpacing: -0.2,
     },
     value: {
-        fontSize: FONT_SIZES.md,
+        fontSize: FONT_SIZES.sm,
         color: COLORS.textPrimary,
         fontWeight: 'bold',
+        letterSpacing: -0.2,
     },
     divider: {
         height: verticalScale(1),
@@ -371,10 +373,11 @@ const styles = StyleSheet.create({
         marginVertical: SPACING.md,
     },
     sectionHeader: {
-        fontSize: FONT_SIZES.md,
+        fontSize: FONT_SIZES.sm,
         fontWeight: 'bold',
         color: COLORS.textPrimary,
-        marginBottom: SPACING.sm,
+        marginBottom: SPACING.xs,
+        letterSpacing: -0.2,
     },
     shopDetails: {
         backgroundColor: COLORS.white,
@@ -384,14 +387,16 @@ const styles = StyleSheet.create({
         borderColor: '#e9ecef',
     },
     shopName: {
-        fontSize: FONT_SIZES.md,
+        fontSize: FONT_SIZES.sm,
         fontWeight: 'bold',
         color: COLORS.textPrimary,
-        marginBottom: 4,
+        marginBottom: 2,
+        letterSpacing: -0.2,
     },
     shopAddress: {
         fontSize: FONT_SIZES.sm,
         color: COLORS.textSecondary,
+        letterSpacing: -0.2,
     },
     saveBtn: {
         width: '100%',

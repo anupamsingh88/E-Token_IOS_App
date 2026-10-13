@@ -25,7 +25,7 @@ if (!preg_match('/^[0-9]{10}$/', $input['mobile'])) {
 
 try {
     // Check if mobile number exists in database
-    $stmt = $pdo->prepare("SELECT farmer_id, status FROM farmer_info WHERE mobile = ?");
+    $stmt = $pdo->prepare("SELECT farmer_id, status FROM farmer_info WHERE mobile = ? ORDER BY id DESC LIMIT 1");
     $stmt->execute([$input['mobile']]);
     $farmer = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -39,7 +39,7 @@ try {
 
     if ($status === 0) {
         // Pending approval
-        echo json_encode(['success' => false, 'message' => 'आपके नजदीकी सचिव जांच कर रहे हैं। 24-48 घंटे में अनुमोदन मिलेगा।']);
+        echo json_encode(['success' => false, 'message' => 'कृपया अपने सभी दस्तावेज़ अपने रिटेलर के पास ले जाकर पुष्टि कराएं।']);
         exit;
     } elseif ($status === 2) {
         // Rejected
@@ -53,7 +53,7 @@ try {
     $expiry = date('Y-m-d H:i:s', strtotime('+5 minutes'));
 
     // Store OTP in database
-    $updateStmt = $pdo->prepare("UPDATE farmer_info SET otp_code = ?, otp_expiry = ? WHERE mobile = ?");
+    $updateStmt = $pdo->prepare("UPDATE farmer_info SET otp_code = ?, otp_expiry = ? WHERE mobile = ? ORDER BY id DESC LIMIT 1");
     $updateStmt->execute([$otp, $expiry, $input['mobile']]);
 
     // SMS API Configuration

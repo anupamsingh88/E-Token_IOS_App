@@ -39,7 +39,7 @@ try {
     $stmt->bind_param("s", $farmer_id);
     $stmt->execute();
     $result = $stmt->get_result();
-    
+
     $raw_bookings = [];
     while ($row = $result->fetch_assoc()) {
         $raw_bookings[] = $row;
@@ -49,7 +49,7 @@ try {
     $grouped = [];
     foreach ($raw_bookings as $row) {
         $group_key = $row['order_id'] ?: 'SINGLE_' . $row['id'];
-        
+
         if (!isset($grouped[$group_key])) {
             $grouped[$group_key] = [
                 'id' => $row['id'], // Main ID for legacy compat
@@ -65,7 +65,7 @@ try {
                 'items' => []
             ];
         }
-        
+
         $grouped[$group_key]['items'][] = [
             'id' => $row['id'],
             'product' => $row['product'],
@@ -73,7 +73,7 @@ try {
             'price_per_bag' => $row['price_per_bag']
         ];
     }
-    
+
     // Add total_price to each group
     foreach ($grouped as $key => &$group) {
         $total = 0;

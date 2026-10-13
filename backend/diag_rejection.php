@@ -1,0 +1,1 @@
+<?php require 'db_connect.php'; try { $stmt = $pdo->query('SELECT farmer_id, mobile, aadhaar, status, rejection_count FROM farmer_info ORDER BY id DESC LIMIT 10'); $records = $stmt->fetchAll(PDO::FETCH_ASSOC); echo json_encode($records, JSON_PRETTY_PRINT); } catch (Exception $e) { echo 'Error: ' . $e->getMessage(); } ?>

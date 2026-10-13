@@ -34,8 +34,20 @@ if ($r_stmt) {
 
 if ($action === 'approve') {
     $new_status = 1; // 1 = Approved
+    $query = "UPDATE farmer_info SET status = ?, approved_by = ?, approved_at = NOW() WHERE farmer_id = ? AND selected_retailer_id = ?";
 } else if ($action === 'reject') {
     $new_status = 2; // 2 = Rejected
+    $rejection_reason = isset($data['rejection_reason']) ? $data['rejection_reason'] : null;
+
+    // Ensure rejected_by and rejection_reason exist gracefully
+    try {
+        $conn->query("ALTER TABLE farmer_info ADD COLUMN rejected_by VARCHAR(50) NULL DEFAULT NULL");
+    } catch (Exception $e) {}
+    try {
+        $conn->query("ALTER TABLE farmer_info ADD COLUMN rejection_reason TEXT NULL DEFAULT NULL");
+    } catch (Exception $e) {}
+
+    $query = "UPDATE farmer_info SET status = ?, rejected_by = ?, rejected_at = NOW(), rejection_reason = ? WHERE farmer_id = ? AND selected_retailer_id = ?";
 } else {
     echo json_encode(["status" => "error", "message" => "Invalid action"]);
     exit;
@@ -58,11 +70,14 @@ if ($info_stmt) {
 }
 
 // Update the farmer's status
-$query = "UPDATE farmer_info SET status = ?, approved_by = ?, approved_at = NOW() WHERE farmer_id = ? AND selected_retailer_id = ?";
 $stmt = $conn->prepare($query);
 
 if ($stmt) {
-    $stmt->bind_param("ssss", $new_status, $retailer_id_str, $request_id, $retailer_id_str);
+    if ($action === 'approve') {
+        $stmt->bind_param("ssss", $new_status, $retailer_id_str, $request_id, $retailer_id_str);
+    } else if ($action === 'reject') {
+        $stmt->bind_param("sssss", $new_status, $retailer_id_str, $rejection_reason, $request_id, $retailer_id_str);
+    }
     if ($stmt->execute()) {
         $affected = $stmt->affected_rows;
         if ($affected === 0) {

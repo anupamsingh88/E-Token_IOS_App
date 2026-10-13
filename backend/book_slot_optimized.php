@@ -169,8 +169,11 @@ try {
         }
         
         // Calculate allowed quota
-        $limit_per_ha = floatval($limits[$product]);
+        $limit_per_ha = floatval($limits[$product] ?? 0);
         $max_allowed = floor($land_area * $limit_per_ha);
+        if ($limit_per_ha > 0 && $max_allowed < 1) {
+            $max_allowed = 1;
+        }
         $booked = intval($booked_by_product[$product] ?? 0);
         
         if (($booked + $qty) > $max_allowed) {

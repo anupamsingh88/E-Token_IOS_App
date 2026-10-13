@@ -91,11 +91,6 @@ export const pickFarmerPhoto = async (
                 quality: 1,
             });
         } else {
-            const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-            if (!permission.granted) {
-                if (onError) onError('गैलरी उपयोग के लिए अनुमति दें');
-                return;
-            }
             result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ImagePicker.MediaTypeOptions.Images,
                 allowsEditing: false, 
@@ -142,11 +137,6 @@ export const pickMultipleKhatauniPhotos = async (
                 onSuccess([result.assets[0].uri]);
             }
         } else {
-            const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-            if (!permission.granted) {
-                if (onError) onError('गैलरी उपयोग के लिए अनुमति दें');
-                return;
-            }
             result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ImagePicker.MediaTypeOptions.Images,
                 allowsMultipleSelection: true,

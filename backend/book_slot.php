@@ -65,7 +65,7 @@ try {
     $l_stmt->execute();
     $l_res = $l_stmt->get_result();
     while ($row = $l_res->fetch_assoc()) {
-        $limits[$row['fertilizer_type']] = floatval($row['limit_per_hectare']);
+        $limits[strtolower($row['fertilizer_type'])] = floatval($row['limit_per_hectare']);
     }
 
     // 3. Validate Each Item
@@ -75,14 +75,18 @@ try {
     foreach ($items as $item) {
         $product = $item['product']; // Urea, DAP, etc.
         $qty = intval($item['quantity']);
-        $price = intval($item['price'] ?? 0); // Price per bag at time of booking
+        $price = floatval($item['price'] ?? 0); // Price per bag at time of booking
 
         if ($qty <= 0)
             continue;
 
         // A. Validate Quota
-        $limit_per_ha = isset($limits[$product]) ? $limits[$product] : 0;
+        $limit_key = strtolower($product);
+        $limit_per_ha = isset($limits[$limit_key]) ? $limits[$limit_key] : 0;
         $max_allowed = floor($land_area * $limit_per_ha);
+        if ($limit_per_ha > 0 && $max_allowed < 1) {
+            $max_allowed = 1;
+        }
 
         // Get already booked qty
         $used_stmt = $conn->prepare("SELECT SUM(quantity) as used FROM product_bookings WHERE farmer_id = ? AND product = ? AND status != 'Cancelled'");
@@ -115,7 +119,7 @@ try {
     $ins_stmt = $conn->prepare("INSERT INTO product_bookings (retailer_id, retailer_name, farmer_id, order_id, booking_date, product, quantity, price_per_bag, status, token_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?)");
 
     foreach ($bookings_to_insert as $b) {
-        $ins_stmt->bind_param("ssssssiis", $retailer_id, $retailer_name, $farmer_id, $order_id, $booking_date, $b['product'], $b['quantity'], $b['price'], $b['token']);
+        $ins_stmt->bind_param("ssssssids", $retailer_id, $retailer_name, $farmer_id, $order_id, $booking_date, $b['product'], $b['quantity'], $b['price'], $b['token']);
         if (!$ins_stmt->execute()) {
             throw new Exception("Database Error: " . $conn->error);
         }

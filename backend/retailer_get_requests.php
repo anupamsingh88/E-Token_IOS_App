@@ -56,9 +56,9 @@ if ($stmt) {
     $stmt->execute();
     $res = $stmt->get_result()->fetch_assoc();
     $today_summary['registrations'] = [
-        "pending" => (int)($res['p'] ?? 0),
-        "approved" => (int)($res['a'] ?? 0),
-        "rejected" => (int)($res['r'] ?? 0)
+        "pending" => (int) ($res['p'] ?? 0),
+        "approved" => (int) ($res['a'] ?? 0),
+        "rejected" => (int) ($res['r'] ?? 0)
     ];
     $stmt->close();
 }
@@ -77,11 +77,11 @@ if ($stmt) {
     $stmt->execute();
     $res = $stmt->get_result()->fetch_assoc();
     $today_summary['bookings'] = [
-        "pending" => (int)($res['p'] ?? 0),
-        "approved" => (int)($res['a'] ?? 0),
-        "cancelled" => (int)($res['c'] ?? 0),
-        "extended" => (int)($res['e'] ?? 0),
-        "collected" => (int)($res['col'] ?? 0)
+        "pending" => (int) ($res['p'] ?? 0),
+        "approved" => (int) ($res['a'] ?? 0),
+        "cancelled" => (int) ($res['c'] ?? 0),
+        "extended" => (int) ($res['e'] ?? 0),
+        "collected" => (int) ($res['col'] ?? 0)
     ];
     $stmt->close();
 }
@@ -119,10 +119,10 @@ if ($st_stmt) {
     $stock_res = $st_stmt->get_result()->fetch_assoc();
     if ($stock_res) {
         $response['data']['current_stock'] = [
-            "urea" => (int)($stock_res['UREA_stock'] ?? 0),
-            "dap" => (int)($stock_res['DAP_stock'] ?? 0),
-            "npk" => (int)($stock_res['NPK_stock'] ?? 0),
-            "mop" => (int)($stock_res['MOP_stock'] ?? 0)
+            "urea" => (int) ($stock_res['UREA_stock'] ?? 0),
+            "dap" => (int) ($stock_res['DAP_stock'] ?? 0),
+            "npk" => (int) ($stock_res['NPK_stock'] ?? 0),
+            "mop" => (int) ($stock_res['MOP_stock'] ?? 0)
         ];
     }
     $st_stmt->close();
@@ -143,9 +143,9 @@ if ($e_stmt) {
         $ebdate = $expired_row['booking_date'];
 
         // 1. Revert Stock in the day's record
-        $col_map = ['urea'=>'UREA_stock','dap'=>'DAP_stock','npk'=>'NPK_stock','mop'=>'MOP_stock'];
-        $ecol = $col_map[$eprod] ?? (strtoupper($eprod).'_stock');
-        
+        $col_map = ['urea' => 'UREA_stock', 'dap' => 'DAP_stock', 'npk' => 'NPK_stock', 'mop' => 'MOP_stock'];
+        $ecol = $col_map[$eprod] ?? (strtoupper($eprod) . '_stock');
+
         // Use prepared statement or at least quotes for strings
         $upd_stock = $conn->prepare("UPDATE retailer_stock SET $ecol = $ecol + ? WHERE retailer_id = ? AND date = ?");
         if ($upd_stock) {
@@ -173,7 +173,9 @@ function columnExists($conn, $table, $column)
 }
 
 // Fetch Registration Requests (Farmers who selected this retailer)
-$reg_query = "SELECT farmer_id as id, name as full_name, mobile as mobile_number, aadhaar, village_id as village, status, created_at, khatauni_number as khasra_number, khasra_rukba, aadhaar_photo, khatauni_photo, profile_photo, approved_at, approved_by FROM farmer_info WHERE selected_retailer_id = ?";
+$reg_query = "SELECT farmer_id as id, name as full_name, mobile as mobile_number, aadhaar, village_id as village, status, created_at, khatauni_number as khasra_number, khasra_rukba, aadhaar_photo, khatauni_photo, profile_photo, approved_at, approved_by,
+              (SELECT COUNT(*) FROM product_bookings WHERE farmer_id = farmer_info.farmer_id AND status != 'Cancelled') as booking_count
+              FROM farmer_info WHERE selected_retailer_id = ?";
 $stmt = $conn->prepare($reg_query);
 if ($stmt) {
     $stmt->bind_param("s", $retailer_id_str);
@@ -183,6 +185,7 @@ if ($stmt) {
         $created_at = isset($row['created_at']) ? strtotime($row['created_at']) : time();
         $approved_at = isset($row['approved_at']) ? strtotime($row['approved_at']) : null;
         $status_num = (int) $row['status'];
+        $b_count = (int) ($row['booking_count'] ?? 0);
 
         $regData = [
             "id" => $row['id'],
@@ -198,7 +201,9 @@ if ($stmt) {
             "status" => $status_num,
             "aadhaar_photo" => $row['aadhaar_photo'],
             "khatauni_photo" => $row['khatauni_photo'],
-            "photo" => $row['profile_photo']
+            "photo" => $row['profile_photo'],
+            "has_bookings" => ($b_count > 0),
+            "booking_count" => $b_count
         ];
 
         if ($status_num === 0) {

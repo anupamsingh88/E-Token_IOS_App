@@ -34,7 +34,6 @@ export interface Fertilizer {
     name: string;
     nameHindi: string;
     pricePerBag: number;
-    weightPerBag: number; // in kg
     imageUrl?: string;
     description?: string;
     descriptionHindi?: string;
