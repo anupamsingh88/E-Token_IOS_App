@@ -14,8 +14,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSettings } from '../contexts/SettingsContext';
 
 // Current App Version Constants (Match android/app/build.gradle)
-export const CURRENT_APP_VERSION_CODE = 14;
-export const CURRENT_APP_VERSION_NAME = '2.0.3';
+export const CURRENT_APP_VERSION_CODE = 15;
+export const CURRENT_APP_VERSION_NAME = '2.0.4';
 export const PLAY_STORE_URL =
   'https://play.google.com/store/apps/details?id=com.weknowtech.upcdcurvarak';
 export const PLAY_STORE_MARKET_URL =
