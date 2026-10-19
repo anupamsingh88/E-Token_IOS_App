@@ -5,6 +5,8 @@ header("Access-Control-Allow-Headers: Content-Type");
 header("Content-Type: application/json");
 
 include 'db_connect.php';
+require_once 'upcdc_auth_helper.php';
+require_once 'jwt_helper.php';
 
 $response = array('success' => false, 'message' => '', 'data' => null);
 
@@ -24,7 +26,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         );
         
         // Generate JWT Token
-        require_once 'jwt_helper.php';
         $payload = [
             'retailer_id' => 'sadmin',
             'user_type' => 'superadmin',
@@ -119,76 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        // Helper function to check credentials against UPCDC portal
-        function verify_upcdc_credentials($username, $password) {
-            if (empty($username) || empty($password)) return false;
-            $post_data = http_build_query([
-                'submit'   => 'submit',
-                'username' => $username,
-                'userpwd'  => $password
-            ]);
-
-            $res = false;
-            if (function_exists('curl_init')) {
-                $ch = curl_init("https://upcdc.in/index_1.php");
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                curl_setopt($ch, CURLOPT_POST, true);
-                curl_setopt($ch, CURLOPT_POSTFIELDS, $post_data);
-                curl_setopt($ch, CURLOPT_TIMEOUT, 6);
-                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-                $res = curl_exec($ch);
-                curl_close($ch);
-            } else {
-                $opts = [
-                    'http' => [
-                        'method'  => 'POST',
-                        'header'  => "Content-type: application/x-www-form-urlencoded\r\n",
-                        'content' => $post_data,
-                        'timeout' => 6
-                    ]
-                ];
-                $context = stream_context_create($opts);
-                $res = @file_get_contents("https://upcdc.in/index_1.php", false, $context);
-            }
-
-            if (!$res) return false;
-            return (
-                strpos($res, 'signout.php') !== false ||
-                strpos($res, 'service-card') !== false ||
-                strpos($res, 'custom-sidebar') !== false ||
-                strpos($res, 'fa-sign-out-alt') !== false
-            );
-        }
-
-        // 1. Check if user is an Officer (AR / DR / Admin) - ONLY officers access UPCDC WebKit Portal
-        $is_officer = preg_match('/^(ar|dr|admin)/i', trim($retailer_id));
-        if ($is_officer) {
-            $officer_authenticated = verify_upcdc_credentials($retailer_id, $password_input);
-            if ($officer_authenticated) {
-                $response['success'] = true;
-                $response['login_type'] = 'webkit';
-                $response['message'] = 'Officer Login Successful';
-                $response['url'] = 'https://upcdc.in/index_1.php?is_from_app=1';
-                $response['post_data'] = [
-                    'submit'   => 'submit',
-                    'username' => $retailer_id,
-                    'userpwd'  => $password_input
-                ];
-                $response['data'] = [
-                    'user_type' => 'officer',
-                    'name'      => strtoupper($retailer_id),
-                    'username'  => $retailer_id
-                ];
-                echo json_encode($response);
-                exit;
-            } else {
-                $response['message'] = 'अधिकारी लॉगिन विफल: यूजर आईडी या पासवर्ड गलत है';
-                echo json_encode($response);
-                exit;
-            }
-        }
-
-        // 2. Retailer Authentication Flow (Retailers ALWAYS go to Native Retailer Dashboard)
+        // 1. Retailer Authentication Flow (First priority: Native Retailer App)
         $stmt_check = $pdo->prepare("SELECT * FROM retailer_info WHERE retailer_id = ?");
         $stmt_check->execute([$retailer_id]);
         $existing_retailer = $stmt_check->fetch();
@@ -202,12 +134,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $district_name = $existing_retailer['district_name'] ?? '';
             $default_pass = !empty($district_name) ? strtolower(substr($district_name, 0, 4)) . substr($retailer_id, -4) : 'pacs' . substr($retailer_id, -4);
 
-            if ($password_input === $stored_pass || $password_input === $default_pass || $password_input === 'test1234') {
+            if ($password_input === $stored_pass || strcasecmp($password_input, $default_pass) === 0 || $password_input === 'test1234' || verify_upcdc_credentials($retailer_id, $password_input)) {
                 $is_valid_password = true;
-            } elseif (verify_upcdc_credentials($retailer_id, $password_input)) {
-                $is_valid_password = true;
-                // Sync new password to local DB
-                $pdo->prepare("UPDATE retailer_info SET password = ? WHERE retailer_id = ?")->execute([$password_input, $retailer_id]);
             }
 
             if (!$is_valid_password) {
@@ -221,82 +149,118 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt_upd->execute([$ip_address, $retailer_id]);
 
         } else {
-            // First Time Registration / Login: Search Retailer in External Master API
-            $api_url = "https://upcdc.in/api/master_block_all.php?retailer_id=" . urlencode($retailer_id);
-            $api_response_raw = @file_get_contents($api_url);
-            $api_data = json_decode($api_response_raw, true);
+            // Not in local DB -> Check External Master Retailer API (master_block_all.php / master_block.php)
+            $ctx = stream_context_create([
+                'http' => [
+                    'timeout' => 4,
+                    'ignore_errors' => true
+                ],
+                'ssl' => [
+                    'verify_peer' => false,
+                    'verify_peer_name' => false
+                ]
+            ]);
 
-            // Fallback to upcod.in if upcdc.in fails
+            $api_url = "https://upcdc.in/api/master_block_all.php?retailer_id=" . urlencode($retailer_id);
+            $api_response_raw = @file_get_contents($api_url, false, $ctx);
+            $api_data = $api_response_raw ? json_decode($api_response_raw, true) : null;
+
+            // Fallback to upcod.in if upcdc.in fails or returns empty data
             if (!$api_data || !isset($api_data['status']) || $api_data['status'] !== true || empty($api_data['data'])) {
                 $api_url_fb = "https://upcod.in/api/master_block.php?retailer_id=" . urlencode($retailer_id);
-                $api_response_fb = @file_get_contents($api_url_fb);
-                $api_data = json_decode($api_response_fb, true);
+                $api_response_fb = @file_get_contents($api_url_fb, false, $ctx);
+                $api_data = $api_response_fb ? json_decode($api_response_fb, true) : null;
             }
 
-            if (!$api_data || !isset($api_data['status']) || $api_data['status'] !== true) {
-                $response['message'] = 'रिटेलर आईडी न तो रिकॉर्ड में है और न ही बाहरी सत्यापन सफल हुआ';
-                echo json_encode($response);
-                exit;
-            }
-
-            if (isset($api_data['data']) && is_array($api_data['data'])) {
+            if ($api_data && isset($api_data['status']) && $api_data['status'] === true && isset($api_data['data']) && is_array($api_data['data'])) {
                 foreach ($api_data['data'] as $item) {
-                    if ($item['retailer_id'] == $retailer_id) {
+                    if (isset($item['retailer_id']) && (string)$item['retailer_id'] === (string)$retailer_id) {
                         $retailer_found = $item;
                         break;
                     }
                 }
             }
 
-            if (!$retailer_found) {
-                $response['message'] = 'रिटेलर आईडी नहीं मिली। कृपया सही आईडी दर्ज करें।';
-                echo json_encode($response);
-                exit;
-            }
+            if ($retailer_found) {
+                // Found in Master API -> This user IS a Retailer! Authenticate into Native App
+                $district_id = $retailer_found['district_id'] ?? '';
+                $district_name = $retailer_found['district_name'] ?? '';
 
-            // Extract District info
-            $district_id = $retailer_found['district_id'] ?? '';
-            $district_name = $retailer_found['district_name'] ?? '';
-
-            if (empty($district_name) && !empty($district_id)) {
-                $stmt_dist = $pdo->prepare("SELECT district_name FROM master_district WHERE sno = ?");
-                $stmt_dist->execute([$district_id]);
-                $dist_data = $stmt_dist->fetch();
-                if ($dist_data) {
-                    $district_name = $dist_data['district_name'];
+                if (empty($district_name) && !empty($district_id)) {
+                    $stmt_dist = $pdo->prepare("SELECT district_name FROM master_district WHERE sno = ?");
+                    $stmt_dist->execute([$district_id]);
+                    $dist_data = $stmt_dist->fetch();
+                    if ($dist_data) {
+                        $district_name = $dist_data['district_name'];
+                    }
                 }
-            }
 
-            // Default generated password formula
-            $default_pass = !empty($district_name) ? strtolower(substr($district_name, 0, 4)) . substr($retailer_id, -4) : 'pacs' . substr($retailer_id, -4);
+                $default_pass = !empty($district_name) ? strtolower(substr($district_name, 0, 4)) . substr($retailer_id, -4) : 'pacs' . substr($retailer_id, -4);
 
-            // Verify password: check default pass, test1234, or UPCDC portal credentials
-            if ($password_input === $default_pass || $password_input === 'test1234') {
-                $is_valid_password = true;
-            } elseif (verify_upcdc_credentials($retailer_id, $password_input)) {
-                $is_valid_password = true;
-            }
+                // Verify password: check default pass, test1234, or UPCDC portal credentials
+                if ($password_input === $default_pass || $password_input === 'test1234') {
+                    $is_valid_password = true;
+                } elseif (verify_upcdc_credentials($retailer_id, $password_input)) {
+                    $is_valid_password = true;
+                }
 
-            if (!$is_valid_password) {
-                $response['message'] = 'अमान्य पासवर्ड। कृपया अपना पोर्टल पासवर्ड या डिफ़ॉल्ट पासवर्ड (' . $default_pass . ') दर्ज करें।';
+                if (!$is_valid_password) {
+                    $response['message'] = 'अमान्य पासवर्ड। कृपया सही पासवर्ड दर्ज करें।';
+                    echo json_encode($response);
+                    exit;
+                }
+
+                // First time registration: Insert new retailer into retailer_info with forced_setup = 1
+                $stmt_insert = $pdo->prepare("
+                    INSERT INTO retailer_info (name, shop_name, retailer_id, password, login_ip, district_id, district_name, forced_setup, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())
+                ");
+                $stmt_insert->execute([
+                    $retailer_found['society_name'] ?? $retailer_found['name'] ?? 'Unknown',
+                    $retailer_found['society_name'] ?? $retailer_found['shop_name'] ?? 'Unknown',
+                    $retailer_id,
+                    $password_input,
+                    $ip_address,
+                    $district_id,
+                    $district_name
+                ]);
+            } else {
+                // Not found in local DB and not found in Master Retailer records.
+                // 2. Check if this is a Departmental Officer (AR, DR, ADO, ADCO, etc.) for UPCDC Portal
+                $upcdc_result = check_upcdc_user($retailer_id, $password_input);
+                if (!empty($upcdc_result['found'])) {
+                    if (!empty($upcdc_result['valid'])) {
+                        // UPCDC Officer Authentication Successful -> Return WebKit Launch Payload
+                        $response['success'] = true;
+                        $response['login_type'] = 'webkit';
+                        $response['message'] = 'UPCDC पोर्टल में आपका स्वागत है!';
+                        $response['url'] = defined('UPCDC_PORTAL_URL') ? UPCDC_PORTAL_URL : 'https://upcdc.in/index_1.php?is_from_app=1';
+                        $response['post_data'] = [
+                            'submit'   => 'submit',
+                            'username' => $retailer_id,
+                            'userpwd'  => $password_input
+                        ];
+                        $response['data'] = [
+                            'username'  => $upcdc_result['username'] ?? $retailer_id,
+                            'name'      => $upcdc_result['name'] ?? $retailer_id,
+                            'user_type' => $upcdc_result['user_type'] ?? 'upcdc'
+                        ];
+                        echo json_encode($response);
+                        exit;
+                    } else {
+                        // Officer found in UPCDC DB, but invalid password
+                        $response['success'] = false;
+                        $response['message'] = 'अमान्य पासवर्ड। कृपया पुनः प्रयास करें।';
+                        echo json_encode($response);
+                        exit;
+                    }
+                }
+
+                // Neither a Retailer nor an Officer
+                $response['message'] = 'रिटेलर आईडी न तो लोकल रिकॉर्ड में है और न ही बाहरी सत्यापन सफल हुआ';
                 echo json_encode($response);
                 exit;
             }
-
-            // First time registration: Insert new retailer into retailer_info with forced_setup = 1
-            $stmt_insert = $pdo->prepare("
-                INSERT INTO retailer_info (name, shop_name, retailer_id, password, login_ip, district_id, district_name, forced_setup, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())
-            ");
-            $stmt_insert->execute([
-                $retailer_found['society_name'] ?? $retailer_found['name'] ?? 'Unknown',
-                $retailer_found['society_name'] ?? $retailer_found['shop_name'] ?? 'Unknown',
-                $retailer_id,
-                $password_input,
-                $ip_address,
-                $district_id,
-                $district_name
-            ]);
         }
 
         // Fetch final retailer record
@@ -311,10 +275,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $response['data'] = $retailer;
         
         // Generate JWT Token
-        require_once 'jwt_helper.php';
         $payload = [
+            'id'          => $retailer['id'] ?? 0,
             'retailer_id' => $retailer_id,
             'user_type'   => 'retailer',
+            'name'        => $retailer['name'] ?? '',
             'exp'         => time() + (60 * 60 * 24 * 30) // 30 days
         ];
         $response['token'] = JWTHelper::encode($payload);
