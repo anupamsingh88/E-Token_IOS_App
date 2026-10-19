@@ -19,9 +19,6 @@ function check_upcdc_user($username, $password) {
     $charset = 'utf8mb4';
 
     $hosts_to_try = [$host];
-    if ($host === 'localhost' || $host === '127.0.0.1') {
-        $hosts_to_try[] = 'upcdc.in';
-    }
 
     $pdo_upcdc = null;
     $last_error = '';
@@ -29,6 +26,14 @@ function check_upcdc_user($username, $password) {
     // Fast PDO check if database is directly accessible
     foreach ($hosts_to_try as $current_host) {
         try {
+            // If checking remote host, verify socket first to avoid 30s OS TCP handshake hang
+            if ($current_host !== 'localhost' && $current_host !== '127.0.0.1') {
+                $fp = @fsockopen($current_host, (int)$port, $errno, $errstr, 1);
+                if (!$fp) {
+                    continue;
+                }
+                fclose($fp);
+            }
             $dsn = "mysql:host=$current_host;port=$port;dbname=$db;charset=$charset";
             $options = [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
@@ -140,30 +145,57 @@ function check_upcdc_user($username, $password) {
  * Fallback HTTP verification directly against upcdc.in/index_3.php
  */
 function check_upcdc_via_http($username, $password) {
-    if (!function_exists('curl_init')) {
-        return ['found' => false, 'error' => 'cURL not enabled'];
+    $auth_url = defined('UPCDC_AUTH_CHECK_URL') ? UPCDC_AUTH_CHECK_URL : 'https://upcdc.in/index_3.php';
+    $post_data = http_build_query([
+        'username' => $username,
+        'userpwd'  => $password,
+        'submit'   => 'submit'
+    ]);
+
+    $raw = false;
+    $http_code = 0;
+
+    if (function_exists('curl_init')) {
+        $ch = curl_init($auth_url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $post_data);
+        curl_setopt($ch, CURLOPT_HEADER, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+
+        $raw = curl_exec($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+    } else {
+        $ctx = stream_context_create([
+            'http' => [
+                'method' => 'POST',
+                'header' => "Content-Type: application/x-www-form-urlencoded\r\n" .
+                            "Content-Length: " . strlen($post_data) . "\r\n",
+                'content' => $post_data,
+                'timeout' => 5,
+                'follow_location' => 0,
+                'ignore_errors' => true
+            ],
+            'ssl' => [
+                'verify_peer' => false,
+                'verify_peer_name' => false
+            ]
+        ]);
+        $raw = @file_get_contents($auth_url, false, $ctx);
+        if (isset($http_response_header) && is_array($http_response_header)) {
+            $raw_headers = implode("\r\n", $http_response_header);
+            if (preg_match('#HTTP/\S+\s+(\d+)#', $raw_headers, $m)) {
+                $http_code = (int)$m[1];
+            }
+            $raw = $raw_headers . "\r\n\r\n" . $raw;
+        }
     }
 
-    $auth_url = defined('UPCDC_AUTH_CHECK_URL') ? UPCDC_AUTH_CHECK_URL : 'https://upcdc.in/index_3.php';
-    $ch = curl_init($auth_url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
-        'username' => $username,
-        'userpwd' => $password,
-        'submit' => 'submit'
-    ]));
-    curl_setopt($ch, CURLOPT_HEADER, true);
-    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 6);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-
-    $raw = curl_exec($ch);
-    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-
     if ($raw === false) {
-        return ['found' => false, 'error' => 'cURL request failed'];
+        return ['found' => false, 'error' => 'HTTP request failed'];
     }
 
     $has_error = (
@@ -201,5 +233,15 @@ function check_upcdc_via_http($username, $password) {
     }
 
     return ['found' => false];
+}
+
+/**
+ * Verify user credentials directly against UPCDC database or HTTP portal
+ */
+if (!function_exists('verify_upcdc_credentials')) {
+    function verify_upcdc_credentials($username, $password) {
+        $result = check_upcdc_user($username, $password);
+        return !empty($result['valid']);
+    }
 }
 ?>
