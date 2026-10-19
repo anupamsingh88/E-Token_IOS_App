@@ -238,7 +238,7 @@ export default function SetupModal({ visible, retailerId, onComplete }: SetupMod
     );
 
     return (
-        <Modal visible={visible} transparent animationType="slide">
+        <Modal visible={visible} transparent animationType="slide" statusBarTranslucent={true}>
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                 style={styles.modalOverlay}
@@ -249,8 +249,6 @@ export default function SetupModal({ visible, retailerId, onComplete }: SetupMod
                     isSmallScreen && { 
                         padding: SPACING.lg, 
                         maxHeight: '92%',
-                        borderBottomLeftRadius: 0,
-                        borderBottomRightRadius: 0
                     }
                 ]}>
                     <View style={[styles.header, isSmallScreen && { marginBottom: SPACING.md }]}>
@@ -367,15 +365,18 @@ export default function SetupModal({ visible, retailerId, onComplete }: SetupMod
 const styles = StyleSheet.create({
     modalOverlay: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.6)',
-        justifyContent: Platform.OS === 'ios' ? 'center' : 'flex-end',
-        padding: Platform.OS === 'ios' ? SPACING.lg : 0,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'flex-end',
     },
     modalContent: {
         backgroundColor: COLORS.white,
-        borderRadius: 30,
-        padding: SPACING.xl,
-        // Remove fixed height to allow flexible resizing with keyboard
+        borderTopLeftRadius: 30,
+        borderTopRightRadius: 30,
+        borderBottomLeftRadius: 0,
+        borderBottomRightRadius: 0,
+        paddingHorizontal: SPACING.xl,
+        paddingTop: SPACING.xl,
+        paddingBottom: Platform.OS === 'ios' ? 34 : SPACING.xl,
         maxHeight: '85%',
         width: '100%',
         ...SHADOWS.large,

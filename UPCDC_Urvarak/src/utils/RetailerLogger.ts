@@ -1,6 +1,7 @@
 import { apiFetch } from './apiClient';
 import { Platform } from 'react-native';
 import { API_BASE_URL } from '../config/config';
+import { CURRENT_APP_VERSION_NAME } from '../components/ForceUpdateModal';
 
 type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'API_REQ' | 'API_RES' | 'API_ERR';
 
@@ -29,7 +30,7 @@ export const logToBackend = async (
             response: details?.response ? JSON.stringify(details.response) : '',
             error_msg: details?.errorMsg || '',
             device_info: `${Platform.OS} ${Platform.Version}`,
-            app_version: '1.0.0' // Should match package.json
+            app_version: CURRENT_APP_VERSION_NAME
         };
 
         await apiFetch(`${API_BASE_URL}/app_logger.php`, {

@@ -202,52 +202,11 @@ export default function RetailerLoginScreen({
                     });
                 }
             } else {
-                // If district is restricted by backend, do NOT attempt UPCDC webkit fallback
-                if (!result.district_restricted) {
-                    // Smart Fallback: Verify directly against UPCDC portal
-                    // This ensures instant login even if live backend files are not yet uploaded to cPanel
-                    try {
-                        const upcdcBody = `submit=submit&username=${encodeURIComponent(retailerId)}&userpwd=${encodeURIComponent(password)}`;
-                        const upcdcCheck = await fetch(API_ENDPOINTS.upcdcCheck, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/x-www-form-urlencoded',
-                            },
-                            body: upcdcBody,
-                        });
-
-                        const html = await upcdcCheck.text();
-                        const hasError = (
-                            html.includes('Invalid Username or Password') ||
-                            html.includes('Please Enter Valid User')
-                        );
-
-                        // If credentials matched on UPCDC, redirect to WebkitScreen immediately!
-                        if (!hasError && (html.includes('UPCDC') || html.includes('service-card') || html.includes('custom-sidebar') || html.includes('PHPSESSID') || html.includes('index_1.php') || html.includes('index_3.php'))) {
-                            const targetUrl = API_ENDPOINTS.upcdcPortal;
-                            const postData = { submit: 'submit', username: retailerId, userpwd: password };
-
-                            if (onWebkitLogin) {
-                                onWebkitLogin(targetUrl, postData, retailerId);
-                            } else if (navigation) {
-                                navigation.replace('WebkitScreen', {
-                                    url: targetUrl,
-                                    postData,
-                                    username: retailerId,
-                                });
-                            }
-                            return;
-                        }
-                    } catch (fallbackError) {
-                        console.warn('UPCDC direct validation error:', fallbackError);
-                    }
-                }
-
                 setAlertConfig({
                     visible: true,
                     type: 'error',
                     title: result.district_restricted ? 'सेवा उपलब्ध नहीं है' : 'लॉगिन विफल',
-                    message: result.message || 'आपका क्रडेंशियल्स सही नहीं हैं',
+                    message: result.message || 'आपका क्रेडेंशियल्स सही नहीं हैं',
                 });
             }
         } catch (error: any) {

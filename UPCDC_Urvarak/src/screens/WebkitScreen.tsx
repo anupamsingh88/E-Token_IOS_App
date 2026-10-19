@@ -188,11 +188,12 @@ export default function WebkitScreen({ route, navigation }: WebkitScreenProps) {
                     style={styles.webview}
                     javaScriptEnabled={true}
                     domStorageEnabled={true}
-                    sharedCookiesEnabled={true}
-                    thirdPartyCookiesEnabled={true}
+                    sharedCookiesEnabled={false}
+                    thirdPartyCookiesEnabled={false}
+                    incognito={true}
                     allowsBackForwardNavigationGestures={true}
                     originWhitelist={['*']}
-                    cacheEnabled={true}
+                    cacheEnabled={false}
                     onLoadProgress={({ nativeEvent }) => {
                         setLoadingProgress(nativeEvent.progress);
                         if (nativeEvent.progress >= 1) {
@@ -274,6 +275,19 @@ export default function WebkitScreen({ route, navigation }: WebkitScreenProps) {
                                 style={styles.modalConfirmBtn}
                                 onPress={() => {
                                     setShowExitModal(false);
+                                    try {
+                                        webViewRef.current?.injectJavaScript(`
+                                            document.cookie.split(";").forEach(function(c) { 
+                                                document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
+                                            });
+                                            sessionStorage.clear();
+                                            localStorage.clear();
+                                            true;
+                                        `);
+                                        webViewRef.current?.clearCache?.(true);
+                                    } catch (e) {
+                                        console.warn('Clear session error:', e);
+                                    }
                                     navigation.replace('RetailerLogin');
                                 }}
                                 activeOpacity={0.8}

@@ -10,6 +10,7 @@
 
 // Base URL for backend API
 // IMPORTANT: Update this IP address if your local network IP changes
+// export const API_BASE_URL = 'http://192.168.1.105:8080/backend';
 // export const API_BASE_URL = 'http://192.168.1.38:8080/backend';
 // export const API_BASE_URL = 'http://192.168.29.97:8080/backend';
 export const API_BASE_URL = 'https://risingayodhya.com/Urvarak/backend';
@@ -17,7 +18,7 @@ export const API_BASE_URL = 'https://risingayodhya.com/Urvarak/backend';
 // Centralized UPCDC Web Portal URLs (Single Source of Truth)
 export const UPCDC_BASE_URL = 'https://upcdc.in';
 export const UPCDC_PORTAL_URL = `${UPCDC_BASE_URL}/index_1.php?is_from_app=1`;
-export const UPCDC_CHECK_URL = `${UPCDC_BASE_URL}/index_1.php`;
+export const UPCDC_CHECK_URL = `${UPCDC_BASE_URL}/index_3.php`;
 
 /**
  * API Endpoints

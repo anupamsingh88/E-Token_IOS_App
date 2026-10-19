@@ -63,8 +63,7 @@ function RootNavigator() {
   const [isCheckingSession, setIsCheckingSession] = useState(true);
   const [isSplashDone, setIsSplashDone] = useState(false);
   const [isPermissionsDone, setIsPermissionsDone] = useState(false);
-
-
+  const [hasInitialNavigated, setHasInitialNavigated] = useState(false);
 
   const SESSION_KEY = '@Urvarak_Retailer_Session';
   const SETUP_KEY = '@Urvarak_Retailer_Setup';
@@ -189,11 +188,11 @@ function RootNavigator() {
 
   useEffect(() => {
     // Navigation Logic: Proceed if session check is done AND splash animation finished
-    // We don't strictly wait for isDataContextReady here because Splash Screen 
-    // now has a safety timeout and its own isReady synchronization.
-    if (!isCheckingSession && isSplashDone && !settingsLoading) {
+    // Only execute ONCE on initial launch to avoid re-mounting and flickering modals on login
+    if (!hasInitialNavigated && !isCheckingSession && isSplashDone && !settingsLoading) {
 
       if (navigationRef.isReady()) {
+        setHasInitialNavigated(true);
         if (retailerId) {
           navigationRef.reset({
             index: 0,
@@ -207,7 +206,7 @@ function RootNavigator() {
         }
       }
     }
-  }, [isCheckingSession, isSplashDone, isDataContextReady, settingsLoading, retailerId, forcedSetup]);
+  }, [hasInitialNavigated, isCheckingSession, isSplashDone, settingsLoading, retailerId, forcedSetup]);
 
 
   return (
