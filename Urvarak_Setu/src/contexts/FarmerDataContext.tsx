@@ -9,6 +9,8 @@ export interface FarmerPrefetchData {
     landArea: number;
     season: string;
     farmerName: string;
+    registry_id?: string;
+    kisan_panjikaran_number?: string;
     retailer: any | null;
     counts: { daily: number; pending: number };
     fetchedAt: number; // timestamp — so screens know how fresh the data is
@@ -20,6 +22,7 @@ interface FarmerDataContextType {
     prefetch: (farmerId: string, farmerName: string) => Promise<void>;
     clearData: () => void;
     refreshData: (farmerId: string, farmerName: string) => Promise<void>;
+    updateKisanCode: (code: string, farmerId?: string) => Promise<void>;
 }
 
 const FarmerDataContext = createContext<FarmerDataContextType>({
@@ -28,6 +31,7 @@ const FarmerDataContext = createContext<FarmerDataContextType>({
     prefetch: async () => { },
     clearData: () => { },
     refreshData: async () => { },
+    updateKisanCode: async () => { },
 });
 
 export const useFarmerData = () => useContext(FarmerDataContext);
@@ -38,25 +42,25 @@ export const FarmerDataProvider = ({ children }: { children: React.ReactNode }) 
 
     /**
      * Called as soon as login session is confirmed (during splash).
-     * Loads from AsyncStorage cache instantly, then fires network fetch in parallel.
+     * Loads from AsyncStorage cache instantly (< 5ms), then fires network fetch in parallel.
      */
     const prefetch = useCallback(async (farmerId: string, farmerName: string) => {
         const CACHE_KEY = `farmer_dashboard_${farmerId}`;
 
-        // 1. Load cache immediately (< 5ms) so data is ready before splash ends
+        // 1. Instant Cache Hydration: Render in 0ms without waiting for network
         try {
             const cached = await AsyncStorage.getItem(CACHE_KEY);
             if (cached) {
                 const data = JSON.parse(cached);
-                // Only use cache if it's less than 10 minutes old
-                const isFresh = Date.now() - (data.timestamp || 0) < 10 * 60 * 1000;
-                if (isFresh && data.fertilizers?.length) {
+                if (data.fertilizers?.length || data.landArea || data.bookings) {
                     setPrefetchedData({
                         fertilizers: data.fertilizers || [],
                         bookings: data.bookings || [],
                         landArea: data.landArea || 0,
                         season: data.season || 'Rabi',
                         farmerName: data.farmerName || farmerName,
+                        registry_id: data.registry_id || '',
+                        kisan_panjikaran_number: data.kisan_panjikaran_number || '',
                         retailer: data.retailer || null,
                         counts: data.counts || { daily: 0, pending: 0 },
                         fetchedAt: data.timestamp || 0,
@@ -68,16 +72,17 @@ export const FarmerDataProvider = ({ children }: { children: React.ReactNode }) 
 
         // 2. Fire network fetch in parallel (doesn't block the above)
         try {
+            const timestamp = Date.now();
             const [quotaRes, bookingsRes] = await Promise.all([
                 apiFetch(API_ENDPOINTS.getFarmerQuota, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ farmer_id: farmerId }),
+                    body: JSON.stringify({ farmer_id: farmerId, _t: timestamp }),
                 }).catch(() => null),
                 apiFetch(API_ENDPOINTS.getFarmerBookings, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ farmer_id: farmerId }),
+                    body: JSON.stringify({ farmer_id: farmerId, _t: timestamp }),
                 }).catch(() => null),
             ]);
 
@@ -87,6 +92,8 @@ export const FarmerDataProvider = ({ children }: { children: React.ReactNode }) 
                 landArea: 0,
                 season: 'Rabi',
                 farmerName,
+                registry_id: '',
+                kisan_panjikaran_number: '',
                 retailer: null,
                 counts: { daily: 0, pending: 0 },
                 fetchedAt: Date.now(),
@@ -99,6 +106,8 @@ export const FarmerDataProvider = ({ children }: { children: React.ReactNode }) 
                     freshData.landArea = quotaData.data.land_area || 0;
                     freshData.season = quotaData.data.season || 'Rabi';
                     freshData.farmerName = quotaData.data.farmer_name || farmerName;
+                    freshData.registry_id = quotaData.data.registry_id || '';
+                    freshData.kisan_panjikaran_number = quotaData.data.kisan_panjikaran_number || quotaData.data.kisan_code || '';
                     freshData.retailer = quotaData.data.retailer || null;
                     freshData.counts = {
                         daily: quotaData.data.daily_booking_count || 0,
@@ -137,6 +146,22 @@ export const FarmerDataProvider = ({ children }: { children: React.ReactNode }) 
         await prefetch(farmerId, farmerName);
     }, [prefetch]);
 
+    /** Update Kisan Code in context and cache instantly */
+    const updateKisanCode = useCallback(async (code: string, farmerId?: string) => {
+        setPrefetchedData(prev => prev ? { ...prev, kisan_panjikaran_number: code } : null);
+        if (farmerId) {
+            const CACHE_KEY = `farmer_dashboard_${farmerId}`;
+            try {
+                const cached = await AsyncStorage.getItem(CACHE_KEY);
+                if (cached) {
+                    const data = JSON.parse(cached);
+                    data.kisan_panjikaran_number = code;
+                    await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(data));
+                }
+            } catch (_) { }
+        }
+    }, []);
+
     /** Called on logout to wipe data */
     const clearData = useCallback(() => {
         setPrefetchedData(null);
@@ -144,7 +169,7 @@ export const FarmerDataProvider = ({ children }: { children: React.ReactNode }) 
     }, []);
 
     return (
-        <FarmerDataContext.Provider value={{ prefetchedData, isReady, prefetch, clearData, refreshData }}>
+        <FarmerDataContext.Provider value={{ prefetchedData, isReady, prefetch, clearData, refreshData, updateKisanCode }}>
             {children}
         </FarmerDataContext.Provider>
     );

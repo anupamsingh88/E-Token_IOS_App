@@ -103,9 +103,11 @@ try {
 
 } catch (PDOException $e) {
     if (ob_get_length()) ob_clean();
-    echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+    error_log("send_otp PDO error: " . $e->getMessage());
+    echo json_encode(['success' => false, 'message' => 'तकनीकी समस्या के कारण OTP नहीं भेजा जा सका। कृपया पुनः प्रयास करें।']);
 } catch (Exception $e) {
     if (ob_get_length()) ob_clean();
-    echo json_encode(['success' => false, 'message' => 'Error: ' . $e->getMessage()]);
+    error_log("send_otp error: " . $e->getMessage());
+    echo json_encode(['success' => false, 'message' => 'OTP भेजने में त्रुटि हुई। कृपया पुनः प्रयास करें।']);
 }
 ?>

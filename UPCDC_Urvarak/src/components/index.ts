@@ -11,5 +11,6 @@ export { default as LocationSelector } from './LocationSelector';
 export { default as TopHeader } from './TopHeader';
 export { default as AlertModal } from './AlertModal';
 export { default as ConfirmModal } from './ConfirmModal';
+export { default as ReasonModal } from './ReasonModal';
 export { default as ForceUpdateModal } from './ForceUpdateModal';
 export { default as DocumentViewerModal } from './DocumentViewerModal';

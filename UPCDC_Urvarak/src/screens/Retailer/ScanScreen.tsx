@@ -54,6 +54,8 @@ interface FarmerDetails {
         farmer_id: string;
         photo?: string;
         booking_date?: string;
+        registry_id?: string;
+        kisan_panjikaran_number?: string;
     };
     quota: {
         total: number;
@@ -536,7 +538,8 @@ export default function ScanScreen({ onClose, retailerName, retailerId }: { onCl
                 <FlatList
                     data={filteredBookings}
                     renderItem={renderBookingItem}
-                    keyExtractor={(item) => item.id || item.order_id}
+                    keyExtractor={(item, index) => String(item.id || item.order_id || `scan-${index}`)}
+                    removeClippedSubviews={false}
                     showsVerticalScrollIndicator={false}
                     refreshControl={
                         <RefreshControl
@@ -704,7 +707,27 @@ export default function ScanScreen({ onClose, retailerName, retailerId }: { onCl
                                     </View>
                                     <View style={styles.detailRow}>
                                         <Text style={styles.detailLabel}>खतौनी नंबर:</Text>
-                                        <Text style={styles.detailValue}>{farmerData?.farmer.khatauni_no}</Text>
+                                        <Text style={styles.detailValue}>{farmerData?.farmer.khatauni_no || 'N/A'}</Text>
+                                    </View>
+                                    <View style={styles.detailRow}>
+                                        <Text style={styles.detailLabel}>जमीन (रकबा):</Text>
+                                        <Text style={styles.detailValue}>
+                                            {farmerData?.farmer.land_acres ? `${farmerData.farmer.land_acres} हेक्टेयर` : '0 हेक्टेयर'}
+                                        </Text>
+                                    </View>
+                                    {!!farmerData?.farmer.registry_id && (
+                                        <View style={styles.detailRow}>
+                                            <Text style={styles.detailLabel}>रजिस्ट्री आईडी:</Text>
+                                            <Text style={[styles.detailValue, { fontWeight: '700', color: COLORS.primary }]}>
+                                                {farmerData.farmer.registry_id}
+                                            </Text>
+                                        </View>
+                                    )}
+                                    <View style={styles.detailRow}>
+                                        <Text style={styles.detailLabel}>कृषक पंजिका कोड:</Text>
+                                        <Text style={[styles.detailValue, { fontWeight: '700', color: farmerData?.farmer.kisan_panjikaran_number ? COLORS.textPrimary : '#DC2626' }]}>
+                                            {farmerData?.farmer.kisan_panjikaran_number || 'उपलब्ध नहीं'}
+                                        </Text>
                                     </View>
                                 </View>
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
     Modal,
     View,
@@ -6,26 +6,35 @@ import {
     StyleSheet,
     Animated,
     Dimensions,
-    Pressable,
+    TouchableOpacity,
+    TouchableWithoutFeedback,
 } from 'react-native';
-import Svg, { Path, Circle } from 'react-native-svg';
-import { COLORS, SPACING, FONT_SIZES, FONT_WEIGHTS, BORDER_RADIUS, SHADOWS } from '../constants';
-import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
+import { COLORS } from '../constants';
 
 interface ConfirmModalProps {
     visible: boolean;
     title: string;
     message: string;
+    confirmText?: string;
+    cancelText?: string;
     onConfirm: () => void;
     onCancel: () => void;
 }
 
 const { width } = Dimensions.get('window');
 
-const ConfirmModal = ({ visible, title, message, onConfirm, onCancel }: ConfirmModalProps) => {
-    const [fadeAnim] = useState(new Animated.Value(0));
-    const [scaleAnim] = useState(new Animated.Value(0.8));
+const ConfirmModal: React.FC<ConfirmModalProps> = ({
+    visible,
+    title,
+    message,
+    confirmText = 'हाँ, करें',
+    cancelText = 'नहीं',
+    onConfirm,
+    onCancel,
+}) => {
+    const fadeAnim = useRef(new Animated.Value(0)).current;
+    const scaleAnim = useRef(new Animated.Value(0.85)).current;
 
     useEffect(() => {
         if (visible) {
@@ -37,8 +46,8 @@ const ConfirmModal = ({ visible, title, message, onConfirm, onCancel }: ConfirmM
                 }),
                 Animated.spring(scaleAnim, {
                     toValue: 1,
-                    friction: 8,
-                    tension: 40,
+                    tension: 65,
+                    friction: 7,
                     useNativeDriver: true,
                 }),
             ]).start();
@@ -50,7 +59,7 @@ const ConfirmModal = ({ visible, title, message, onConfirm, onCancel }: ConfirmM
                     useNativeDriver: true,
                 }),
                 Animated.timing(scaleAnim, {
-                    toValue: 0.8,
+                    toValue: 0.85,
                     duration: 150,
                     useNativeDriver: true,
                 }),
@@ -59,51 +68,63 @@ const ConfirmModal = ({ visible, title, message, onConfirm, onCancel }: ConfirmM
     }, [visible]);
 
     return (
-        <Modal transparent visible={visible} animationType="none">
-            <View style={styles.overlay}>
-                <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
-                <Animated.View
-                    style={[
-                        styles.container,
-                        {
-                            opacity: fadeAnim,
-                            transform: [{ scale: scaleAnim }],
-                        },
-                    ]}
-                >
-                    <View style={styles.card}>
-                        <View style={styles.iconContainer}>
-                            <Ionicons name="help-circle-outline" size={40} color={COLORS.primary} />
-                        </View>
-                        <Text style={styles.title}>{title}</Text>
-                        <Text style={styles.message}>{message}</Text>
-                        
-                        <View style={styles.actionRow}>
-                            <Pressable
-                                style={({ pressed }) => [
-                                    styles.button,
-                                    styles.cancelButton,
-                                    pressed && { opacity: 0.8 }
-                                ]}
-                                onPress={onCancel}
-                            >
-                                <Text style={styles.cancelButtonText}>नहीं</Text>
-                            </Pressable>
-                            
-                            <Pressable
-                                style={({ pressed }) => [
-                                    styles.button,
-                                    styles.confirmButton,
-                                    pressed && { opacity: 0.8 }
-                                ]}
-                                onPress={onConfirm}
-                            >
-                                <Text style={styles.confirmButtonText}>हाँ, करें</Text>
-                            </Pressable>
-                        </View>
-                    </View>
+        <Modal
+            transparent
+            visible={visible}
+            animationType="none"
+            onRequestClose={onCancel}
+            statusBarTranslucent
+        >
+            <TouchableWithoutFeedback onPress={onCancel}>
+                <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
+                    <TouchableWithoutFeedback>
+                        <Animated.View
+                            style={[
+                                styles.card,
+                                { transform: [{ scale: scaleAnim }] },
+                            ]}
+                        >
+                            {/* Top Decorative Icon Badge */}
+                            <View style={styles.outerIconRing}>
+                                <View style={styles.innerIconCircle}>
+                                    <Ionicons name="help-circle" size={36} color={COLORS.primary || '#1E3A8A'} />
+                                </View>
+                            </View>
+
+                            {/* Title & Message */}
+                            <Text style={styles.title} maxFontSizeMultiplier={1.3}>
+                                {title}
+                            </Text>
+                            <Text style={styles.message} maxFontSizeMultiplier={1.3}>
+                                {message}
+                            </Text>
+
+                            {/* Action Buttons */}
+                            <View style={styles.buttonRow}>
+                                <TouchableOpacity
+                                    style={[styles.button, styles.cancelButton]}
+                                    onPress={onCancel}
+                                    activeOpacity={0.85}
+                                >
+                                    <Text style={styles.cancelButtonText} maxFontSizeMultiplier={1.3}>
+                                        {cancelText}
+                                    </Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    style={[styles.button, styles.confirmButton]}
+                                    onPress={onConfirm}
+                                    activeOpacity={0.85}
+                                >
+                                    <Text style={styles.confirmButtonText} maxFontSizeMultiplier={1.3}>
+                                        {confirmText}
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
+                        </Animated.View>
+                    </TouchableWithoutFeedback>
                 </Animated.View>
-            </View>
+            </TouchableWithoutFeedback>
         </Modal>
     );
 };
@@ -111,69 +132,101 @@ const ConfirmModal = ({ visible, title, message, onConfirm, onCancel }: ConfirmM
 const styles = StyleSheet.create({
     overlay: {
         flex: 1,
+        backgroundColor: 'rgba(15, 23, 42, 0.65)',
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: 'rgba(0,0,0,0.4)',
-    },
-    container: {
-        width: width * 0.8,
-        alignItems: 'center',
+        padding: 24,
     },
     card: {
         width: '100%',
-        backgroundColor: COLORS.white,
-        borderRadius: BORDER_RADIUS.xl,
-        padding: SPACING.xl,
+        maxWidth: Math.min(width * 0.88, 350),
+        backgroundColor: '#FFFFFF',
+        borderRadius: 24,
+        paddingHorizontal: 22,
+        paddingTop: 26,
+        paddingBottom: 22,
         alignItems: 'center',
-        ...SHADOWS.large,
+        borderWidth: 1,
+        borderColor: '#F1F5F9',
+        shadowColor: '#0F172A',
+        shadowOffset: { width: 0, height: 12 },
+        shadowOpacity: 0.18,
+        shadowRadius: 24,
+        elevation: 12,
     },
-    iconContainer: {
-        marginBottom: SPACING.lg,
+    outerIconRing: {
+        width: 72,
+        height: 72,
+        borderRadius: 36,
+        backgroundColor: '#EFF6FF',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 16,
+    },
+    innerIconCircle: {
+        width: 52,
+        height: 52,
+        borderRadius: 26,
+        backgroundColor: '#FFFFFF',
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 4,
+        elevation: 2,
     },
     title: {
-        fontSize: FONT_SIZES.xl,
-        fontWeight: FONT_WEIGHTS.bold,
-        color: COLORS.textPrimary,
-        marginBottom: SPACING.sm,
+        fontSize: 19,
+        fontWeight: '800',
+        color: '#0F172A',
         textAlign: 'center',
+        marginBottom: 8,
+        letterSpacing: 0.2,
     },
     message: {
-        fontSize: FONT_SIZES.md,
-        color: COLORS.textSecondary,
+        fontSize: 14.5,
+        color: '#475569',
         textAlign: 'center',
-        marginBottom: SPACING.xl,
         lineHeight: 22,
+        marginBottom: 22,
+        paddingHorizontal: 6,
     },
-    actionRow: {
+    buttonRow: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         width: '100%',
-        gap: SPACING.md,
+        gap: 10,
     },
     button: {
         flex: 1,
-        height: 50,
-        borderRadius: BORDER_RADIUS.lg,
-        justifyContent: 'center',
+        paddingVertical: 13,
+        paddingHorizontal: 16,
+        borderRadius: 14,
         alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 2,
     },
     cancelButton: {
-        backgroundColor: COLORS.background,
-        borderWidth: 1,
-        borderColor: '#E5E7EB',
+        backgroundColor: '#F1F5F9',
+        elevation: 0,
+        shadowOpacity: 0,
     },
     confirmButton: {
-        backgroundColor: COLORS.primary,
+        backgroundColor: COLORS.primary || '#1E3A8A',
     },
     cancelButtonText: {
-        color: COLORS.textSecondary,
-        fontSize: FONT_SIZES.md,
-        fontWeight: FONT_WEIGHTS.bold,
+        fontSize: 15,
+        fontWeight: '700',
+        color: '#475569',
     },
     confirmButtonText: {
-        color: COLORS.white,
-        fontSize: FONT_SIZES.md,
-        fontWeight: FONT_WEIGHTS.bold,
+        fontSize: 15,
+        fontWeight: '700',
+        color: '#FFFFFF',
     },
 });
 

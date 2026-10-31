@@ -10,7 +10,7 @@ import { Platform } from 'react-native';
 // ─── Config ───────────────────────────────────────────────────────────────────
 const LOG_ENDPOINT = `${API_BASE_URL}/save_log.php`;
 const APP_LOG_SECRET = 'sfms_log_2026'; // Must match LOG_SECRET in save_log.php
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '3.0.2';
 const BATCH_INTERVAL_MS = 5000;  // Send logs every 5 seconds
 const MAX_QUEUE_SIZE = 50;       // Send immediately if queue is this big
 

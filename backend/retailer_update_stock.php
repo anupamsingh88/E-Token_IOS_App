@@ -67,18 +67,34 @@ try {
         $stock_id = $existing['id'];
     }
 
+    // Fetch existing columns in retailer_stock
+    $cols_stmt = $pdo->query("SHOW COLUMNS FROM `retailer_stock`");
+    $existing_cols = array_column($cols_stmt->fetchAll(PDO::FETCH_ASSOC), 'Field');
+
     $success_products = [];
     foreach ($updates_received as $update) {
-        $prod = strtolower($update['product_type'] ?? '');
-        $qty = $update['quantity'];
+        $prod = strtolower(trim($update['product_type'] ?? ''));
+        if (!$prod) continue;
+        $qty = intval($update['quantity']);
 
-        if (isset($column_map[$prod])) {
-            $col_stock = $column_map[$prod];
-            $sql = "UPDATE retailer_stock SET $col_stock = ?, updated_at = NOW() WHERE id = ?";
-            $stmt_upd = $pdo->prepare($sql);
-            $stmt_upd->execute([$qty, $stock_id]);
-            $success_products[] = $prod;
+        $col_stock = $column_map[$prod] ?? (strtoupper($prod) . '_stock');
+
+        // Dynamically add column if not exists (append directly after the last existing stock column)
+        if (!in_array($col_stock, $existing_cols)) {
+            $after_col = 'date';
+            foreach ($existing_cols as $c) {
+                if (preg_match('/_stock$/i', $c)) {
+                    $after_col = $c;
+                }
+            }
+            $pdo->exec("ALTER TABLE `retailer_stock` ADD COLUMN `$col_stock` INT DEFAULT 0 AFTER `$after_col`");
+            $existing_cols[] = $col_stock;
         }
+
+        $sql = "UPDATE retailer_stock SET `$col_stock` = ?, updated_at = NOW() WHERE id = ?";
+        $stmt_upd = $pdo->prepare($sql);
+        $stmt_upd->execute([$qty, $stock_id]);
+        $success_products[] = $prod;
     }
 
     $pdo->commit();

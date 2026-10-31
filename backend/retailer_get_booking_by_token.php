@@ -5,6 +5,7 @@ header("Access-Control-Allow-Headers: Content-Type");
 header('Content-Type: application/json');
 
 include 'db_connect.php';
+require_once 'auto_cancel_helper.php';
 
 $data = json_decode(file_get_contents("php://input"), true);
 
@@ -35,9 +36,13 @@ if (empty($retailer_id)) {
     exit;
 }
 
+// Auto-cancel any expired bookings for this retailer
+autoCancelExpiredBookings($conn, $retailer_id, null);
+
 // 1. Fetch Booking and Farmer Details - Verified for this specific retailer
 $query = "SELECT b.id, b.order_id, b.farmer_id, b.product, b.quantity, b.status, b.token_number, b.booking_date, b.collected_at,
-                 f.name as farmer_name, f.mobile as farmer_mobile, f.aadhaar, f.khatauni_number, f.khasra_rukba, f.farmer_id as f_id, f.profile_photo as photo
+                 f.name as farmer_name, f.mobile as farmer_mobile, f.aadhaar, f.khatauni_number, f.khasra_rukba, f.farmer_id as f_id, f.profile_photo as photo,
+                 f.registry_id, f.kisan_panjikaran_number
           FROM product_bookings b
           JOIN farmer_info f ON b.farmer_id = f.farmer_id
           WHERE (b.token_number = ? OR b.order_id = ?) 
@@ -65,6 +70,9 @@ if ($stmt) {
                 "aadhaar" => $row['aadhaar'],
                 "khatauni_no" => $row['khatauni_number'],
                 "land_acres" => $row['khasra_rukba'],
+                "registry_id" => $row['registry_id'] ?? '',
+                "kisan_panjikaran_number" => $row['kisan_panjikaran_number'] ?? '',
+                "kisan_code" => $row['kisan_panjikaran_number'] ?? '',
                 "farmer_id" => $farmer_id,
                 "photo" => $row['photo'],
                 "booking_date" => $row['booking_date'],

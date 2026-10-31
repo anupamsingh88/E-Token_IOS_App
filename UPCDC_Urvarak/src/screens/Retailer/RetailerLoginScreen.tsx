@@ -26,6 +26,8 @@ import {
 } from '../../constants';
 import { API_ENDPOINTS } from '../../config/config';
 import { apiFetch, setRetailerTokenCache } from '../../utils/apiClient';
+import { useSettings } from '../../contexts/SettingsContext';
+import { resolveAppImage } from '../../utils/imageResolver';
 
 interface RetailerLoginScreenProps {
     onLoginSuccess: (isSuperAdmin: boolean, retailerId?: string, setupRequired?: boolean) => void;
@@ -108,6 +110,10 @@ export default function RetailerLoginScreen({
     onWebkitLogin,
     navigation
 }: RetailerLoginScreenProps) {
+    const { settings } = useSettings();
+    const defaultBg = require('../../../assets/retailer.png');
+    const bgSource = resolveAppImage(settings?.retailer_app_bg_image_url || settings?.bg_image_url, defaultBg);
+
     const [retailerId, setRetailerId] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
@@ -233,7 +239,7 @@ export default function RetailerLoginScreen({
     return (
         <View style={{ flex: 1, backgroundColor: '#000' }}>
             <Image
-                source={require('../../../assets/retailer.png')}
+                source={bgSource}
                 style={[
                     styles.backgroundImage,
                     { position: 'absolute', top: 0, left: 0, width: SCREEN_WIDTH, height: SCREEN_HEIGHT }

@@ -11,7 +11,9 @@
 // Base URL for backend API
 // IMPORTANT: Update this IP address if your local network IP changes
 // export const API_BASE_URL = 'http://192.168.1.105:8080/backend';
+// export const API_BASE_URL = 'http://192.168.0.129:8080/backend';
 // export const API_BASE_URL = 'http://192.168.1.38:8080/backend';
+// export const API_BASE_URL = 'http://192.168.1.67:8080/backend';
 // export const API_BASE_URL = 'http://192.168.29.97:8080/backend';
 export const API_BASE_URL = 'https://risingayodhya.com/Urvarak/backend';
 
@@ -53,6 +55,9 @@ export const API_ENDPOINTS = {
     updateStock: `${API_BASE_URL}/retailer_update_stock.php`,
     requestStock: `${API_BASE_URL}/retailer_request_stock.php`,
     getDailyRequests: `${API_BASE_URL}/retailer_get_daily_requests.php`,
+
+    // Products & Prices
+    getFertilizerPrices: `${API_BASE_URL}/get_fertilizer_prices.php`,
 
     // Add more endpoints here as needed
     getBookingByToken: `${API_BASE_URL}/retailer_get_booking_by_token.php`,

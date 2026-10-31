@@ -1,13 +1,10 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Dimensions, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, useWindowDimensions, TouchableOpacity } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, SHADOWS } from '../constants';
 import { scale, verticalScale, moderateScale } from '../utils/responsive';
-
-
-const { width } = Dimensions.get('window');
 
 export interface DashboardBooking {
     id: string;
@@ -28,6 +25,9 @@ interface QRCarouselProps {
 }
 
 const QRCarousel = React.memo(({ bookings, onPress }: QRCarouselProps) => {
+    const { width } = useWindowDimensions();
+    const qrSize = Math.round(Math.min(Math.max(width * 0.20, 72), 88));
+
     if (!bookings || bookings.length === 0) {
         return null;
     }
@@ -48,11 +48,11 @@ const QRCarousel = React.memo(({ bookings, onPress }: QRCarouselProps) => {
                 {bookings.map((booking, index) => (
                     <TouchableOpacity
                         key={booking.id || index}
-                        style={styles.cardWrapper}
+                        style={[styles.cardWrapper, { width }]}
                         onPress={() => onPress(booking)}
                         activeOpacity={0.8}
                     >
-                        <View style={styles.card}>
+                        <View style={[styles.card, { width: width - (SPACING.lg * 2) }]}>
                             <LinearGradient
                                 colors={['#ffffff', '#f8f9fa']}
                                 style={StyleSheet.absoluteFill}
@@ -66,7 +66,7 @@ const QRCarousel = React.memo(({ bookings, onPress }: QRCarouselProps) => {
                                         token: booking.token_number,
                                         product: booking.product
                                     })}
-                                    size={100}
+                                    size={qrSize}
                                     color={COLORS.black}
                                     backgroundColor="transparent"
                                 />
@@ -74,20 +74,24 @@ const QRCarousel = React.memo(({ bookings, onPress }: QRCarouselProps) => {
 
                                 {booking.status && (booking.status === 'Cancelled' || booking.status?.toLowerCase() === 'cancelled') && (
                                     <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', borderRadius: BORDER_RADIUS.md, overflow: 'hidden', backgroundColor: 'rgba(255, 255, 255, 0.85)' }]}>
-                                        <Text style={{ fontSize: 32 }}>❌</Text>
-                                        <Text style={{ fontSize: moderateScale(13), color: COLORS.error, fontWeight: 'bold', marginTop: 4, textAlign: 'center' }}>रद्द किया गया</Text>
+                                        <Text style={{ fontSize: Math.round(qrSize * 0.32) }}>❌</Text>
+                                        <Text style={{ fontSize: moderateScale(11), color: COLORS.error, fontWeight: 'bold', marginTop: 2, textAlign: 'center' }}>
+                                            {(booking.cancelled_by === 'SYSTEM_AUTO' || booking.cancellation_reason?.includes('स्वतः रद्द') || booking.cancellation_reason?.includes('किसान के न पहुँचने'))
+                                                ? 'स्वतः रद्द हुआ'
+                                                : 'रद्द किया गया'}
+                                        </Text>
                                     </View>
                                 )}
                                 {booking.status && (booking.status === 'Pending' || booking.status?.toLowerCase() === 'pending') && (
                                     <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', borderRadius: BORDER_RADIUS.md, overflow: 'hidden', backgroundColor: 'rgba(255, 255, 255, 0.85)' }]}>
-                                        <Text style={{ fontSize: 32 }}>⏳</Text>
-                                        <Text style={{ fontSize: moderateScale(13), color: COLORS.warning, fontWeight: 'bold', marginTop: 4, textAlign: 'center' }}>लंबित</Text>
+                                        <Text style={{ fontSize: Math.round(qrSize * 0.32) }}>⏳</Text>
+                                        <Text style={{ fontSize: moderateScale(11), color: COLORS.warning, fontWeight: 'bold', marginTop: 2, textAlign: 'center' }}>लंबित</Text>
                                     </View>
                                 )}
                                 {booking.status && (booking.status === 'Collected' || booking.status?.toLowerCase() === 'collected') && (
                                     <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', borderRadius: BORDER_RADIUS.md, overflow: 'hidden', backgroundColor: 'rgba(255, 255, 255, 0.85)' }]}>
-                                        <Text style={{ fontSize: 32 }}>✔️</Text>
-                                        <Text style={{ fontSize: moderateScale(13), color: COLORS.success, fontWeight: 'bold', marginTop: 4, textAlign: 'center' }}>प्राप्त</Text>
+                                        <Text style={{ fontSize: Math.round(qrSize * 0.32) }}>✔️</Text>
+                                        <Text style={{ fontSize: moderateScale(11), color: COLORS.success, fontWeight: 'bold', marginTop: 2, textAlign: 'center' }}>प्राप्त</Text>
                                     </View>
                                 )}
                             </View>
@@ -96,7 +100,7 @@ const QRCarousel = React.memo(({ bookings, onPress }: QRCarouselProps) => {
                                 <View style={styles.headerRow}>
                                     <View style={{ flexShrink: 1, marginRight: 4 }}>
                                         <Text style={styles.tokenLabel}>टोकन नंबर</Text>
-                                        <Text style={styles.tokenNumber} numberOfLines={1} adjustsFontSizeToFit>{booking.token_number}</Text>
+                                        <Text style={styles.tokenNumber} numberOfLines={1} adjustsFontSizeToFit>{booking.token_number || (booking.status === 'Cancelled' ? 'लागू नहीं' : 'जारी नहीं हुआ')}</Text>
                                     </View>
 
                                     <View style={[
@@ -114,7 +118,8 @@ const QRCarousel = React.memo(({ bookings, onPress }: QRCarouselProps) => {
                                                     { color: COLORS.primary }
                                         ]}>
                                             {(booking.status === 'Collected' || booking.status?.toLowerCase() === 'collected') ? 'प्राप्त' :
-                                                (booking.status === 'Cancelled' || booking.status?.toLowerCase() === 'cancelled') ? 'रद्द' :
+                                                (booking.status === 'Cancelled' || booking.status?.toLowerCase() === 'cancelled') ?
+                                                    ((booking.cancelled_by === 'SYSTEM_AUTO' || booking.cancellation_reason?.includes('स्वतः रद्द') || booking.cancellation_reason?.includes('किसान के न पहुँचने')) ? 'स्वतः रद्द' : 'रद्द') :
                                                     (booking.status === 'Pending' || booking.status?.toLowerCase() === 'pending') ? 'लंबित' :
                                                         (booking.status?.toLowerCase() === 'confirmed' || booking.status?.toLowerCase() === 'approved') ? 'पुष्टि' : 
                                                             (booking.status?.toLowerCase() === 'extended') ? 'विस्तारित' : booking.status}
@@ -125,33 +130,36 @@ const QRCarousel = React.memo(({ bookings, onPress }: QRCarouselProps) => {
                                 <View style={styles.divider} />
 
                                 <View style={styles.detailRow}>
-                                    <Text style={styles.detailLabel}>उत्पाद:</Text>
+                                    <Text style={styles.detailLabel} maxFontSizeMultiplier={1.3}>उत्पाद:</Text>
                                     <View style={{ flex: 1, alignItems: 'flex-end' }}>
                                         {booking.items && booking.items.length > 0 ? (
                                             booking.items.map((item: any, idx: number) => (
-                                                <Text key={idx} style={styles.detailValue} numberOfLines={1}>
+                                                <Text key={idx} style={styles.detailValue} numberOfLines={1} maxFontSizeMultiplier={1.3}>
                                                     {item.nameHindi || item.product} ({item.quantity} बोरी)
                                                 </Text>
                                             ))
                                         ) : (
-                                            <Text style={styles.detailValue}>
-                                                {booking.product === 'Urea' ? 'यूरिया' :
+                                            <Text style={styles.detailValue} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+                                                {booking.nameHindi || (
+                                                    booking.product === 'Urea' ? 'यूरिया' :
                                                     booking.product === 'DAP' ? 'डीएपी' :
-                                                        booking.product === 'NPK' ? 'एनपीके' :
-                                                            booking.product === 'MOP' ? 'एमओपी' : booking.product} ({booking.quantity} बोरी)
+                                                    booking.product === 'NPK' ? 'एनपीके' :
+                                                    booking.product === 'MOP' ? 'एमओपी' :
+                                                    booking.product === 'TSP' ? 'टीएसपी' : booking.product
+                                                )} ({booking.quantity} बोरी)
                                             </Text>
                                         )}
                                     </View>
                                 </View>
 
                                 <View style={styles.detailRow}>
-                                    <Text style={styles.detailLabel}>तारीख:</Text>
-                                    <Text style={styles.detailValue}>{new Date(booking.booking_date).toLocaleDateString('hi-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</Text>
+                                    <Text style={styles.detailLabel} maxFontSizeMultiplier={1.3}>तारीख:</Text>
+                                    <Text style={styles.detailValue} maxFontSizeMultiplier={1.3}>{new Date(booking.booking_date).toLocaleDateString('hi-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</Text>
                                 </View>
 
-                                <View style={styles.detailRow}>
-                                    <Text style={styles.detailLabel}>दुकान:</Text>
-                                    <Text style={styles.detailValue}>{booking.shop_name}</Text>
+                                <View style={[styles.detailRow, { alignItems: 'flex-start' }]}>
+                                    <Text style={[styles.detailLabel, { marginTop: 1 }]} maxFontSizeMultiplier={1.3}>दुकान:</Text>
+                                    <Text style={styles.detailValue} maxFontSizeMultiplier={1.3}>{booking.shop_name}</Text>
                                 </View>
                             </View>
                         </View>
@@ -180,13 +188,11 @@ const styles = StyleSheet.create({
         paddingBottom: SPACING.md,
     },
     cardWrapper: {
-        width: width, // Exactly full width for perfect paging
         justifyContent: 'center',
         alignItems: 'center',
     },
     card: {
         flexDirection: 'row',
-        width: width - (SPACING.lg * 2), // Keep margins on sides visually
         borderRadius: BORDER_RADIUS.lg,
         padding: SPACING.md,
         alignItems: 'center',
@@ -197,10 +203,10 @@ const styles = StyleSheet.create({
     },
     qrContainer: {
         alignItems: 'center',
-        padding: SPACING.sm,
+        padding: 6,
         backgroundColor: COLORS.white,
         borderRadius: BORDER_RADIUS.md,
-        marginRight: SPACING.md,
+        marginRight: SPACING.sm,
     },
     qrLabel: {
         fontSize: moderateScale(10),
@@ -217,43 +223,46 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'flex-start',
-        marginBottom: 8,
+        marginBottom: 6,
     },
     tokenLabel: {
-        fontSize: moderateScale(12), // Increased from 10
+        fontSize: moderateScale(11),
         color: COLORS.textSecondary,
         textTransform: 'uppercase',
-        letterSpacing: 1,
+        letterSpacing: 0.5,
         marginBottom: 2
     },
     tokenNumber: {
-        fontSize: moderateScale(22),
+        fontSize: moderateScale(20),
         fontWeight: 'bold',
         color: COLORS.primary,
-        letterSpacing: 1,
+        letterSpacing: 0.5,
     },
     divider: {
         height: verticalScale(1),
         backgroundColor: COLORS.grayLight,
-        marginVertical: 8,
+        marginVertical: 6,
         width: '100%',
     },
     detailRow: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginBottom: 4,
+        alignItems: 'center',
+        marginBottom: 3,
     },
     detailLabel: {
-        fontSize: moderateScale(14), // Increased from 12
+        fontSize: moderateScale(13),
         color: COLORS.textSecondary,
-        width: moderateScale(60),
+        marginRight: SPACING.xs,
+        flexShrink: 0,
     },
     detailValue: {
-        fontSize: moderateScale(15), // Increased from 12
+        fontSize: moderateScale(14),
         fontWeight: '600',
         color: COLORS.textPrimary,
         flex: 1,
+        flexShrink: 1,
         textAlign: 'right',
+        lineHeight: moderateScale(18),
     },
     statusBadge: {
         paddingHorizontal: 5, // Reduced from 10

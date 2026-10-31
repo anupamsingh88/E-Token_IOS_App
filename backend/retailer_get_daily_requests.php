@@ -44,15 +44,31 @@ try {
         }
     }
 
-    $formatted_data = [
-        'urea' => ['quantity' => 0, 'status' => null, 'comment' => null, 'time' => null],
-        'dap'  => ['quantity' => 0, 'status' => null, 'comment' => null, 'time' => null],
-        'npk'  => ['quantity' => 0, 'status' => null, 'comment' => null, 'time' => null],
-        'mop'  => ['quantity' => 0, 'status' => null, 'comment' => null, 'time' => null]
-    ];
+    $formatted_data = [];
+    $prod_res = $conn->query("SELECT type_id FROM fertilizer_products");
+    if ($prod_res && $prod_res->num_rows > 0) {
+        while ($p = $prod_res->fetch_assoc()) {
+            $formatted_data[strtolower($p['type_id'])] = [
+                'quantity' => 0,
+                'status' => null,
+                'comment' => null,
+                'time' => null
+            ];
+        }
+    } else {
+        $formatted_data = [
+            'urea' => ['quantity' => 0, 'status' => null, 'comment' => null, 'time' => null],
+            'dap'  => ['quantity' => 0, 'status' => null, 'comment' => null, 'time' => null],
+            'npk'  => ['quantity' => 0, 'status' => null, 'comment' => null, 'time' => null],
+            'mop'  => ['quantity' => 0, 'status' => null, 'comment' => null, 'time' => null]
+        ];
+    }
 
     foreach ($requests as $req) {
         $type = strtolower($req['product_type']);
+        if (!isset($formatted_data[$type])) {
+            $formatted_data[$type] = ['quantity' => 0, 'status' => null, 'comment' => null, 'time' => null];
+        }
         if ($formatted_data[$type]['status'] === null) {
             $formatted_data[$type] = [
                 'quantity' => (int)$req['requested_quantity'],

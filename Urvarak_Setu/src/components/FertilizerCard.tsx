@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, SPACING, FONT_SIZES, FONT_WEIGHTS, BORDER_RADIUS, SHADOWS } from '../constants';
 import { Feather } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from '../utils/responsive';
+import { API_BASE_URL } from '../config/config';
 
 
 const FERTILIZER_IMAGES: Record<string, any> = {
@@ -11,13 +12,30 @@ const FERTILIZER_IMAGES: Record<string, any> = {
     dap: require('../../assets/DAP_bori.png'),
     npk: require('../../assets/NPK_bori.png'),
     mop: require('../../assets/MOP_bori.png'),
+    tsp: require('../../assets/TSP_bori.png'),
 };
 
-const FERTILIZER_COLORS = {
-    urea: { badge: '#1D4ED8', gradient: ['#1e3a8a', '#3b82f6'] as [string, string] },
-    dap: { badge: '#B91C1C', gradient: ['#7f1d1d', '#ef4444'] as [string, string] },
-    npk: { badge: '#92400E', gradient: ['#78350f', '#f59e0b'] as [string, string] },
-    mop: { badge: '#6B21A8', gradient: ['#4a044e', '#a855f7'] as [string, string] },
+export const resolveFertilizerImage = (imageUrl?: string | null, type?: string) => {
+    const typeKey = (type || '').toLowerCase();
+    if (imageUrl && typeof imageUrl === 'string') {
+        const trimmed = imageUrl.trim();
+        if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+            return { uri: trimmed, cache: 'force-cache' as const };
+        }
+        const cleanPath = trimmed.replace(/^[\\\/]+/, '').replace(/\\/g, '/');
+        if (cleanPath.length > 0) {
+            return { uri: `${API_BASE_URL}/${cleanPath}`, cache: 'force-cache' as const };
+        }
+    }
+    return FERTILIZER_IMAGES[typeKey] || require('../../assets/NPK_bori.png');
+};
+
+const FERTILIZER_COLORS: Record<string, { badge: string; gradient: [string, string] }> = {
+    urea: { badge: '#1D4ED8', gradient: ['#1e3a8a', '#3b82f6'] },
+    dap: { badge: '#B91C1C', gradient: ['#7f1d1d', '#ef4444'] },
+    npk: { badge: '#92400E', gradient: ['#78350f', '#f59e0b'] },
+    mop: { badge: '#6B21A8', gradient: ['#4a044e', '#a855f7'] },
+    tsp: { badge: '#0284C7', gradient: ['#0369a1', '#0ea5e9'] },
 };
 
 interface FertilizerCardProps {
@@ -40,8 +58,15 @@ export default function FertilizerCard({
     imageUrl,
     onPress,
 }: FertilizerCardProps) {
-    const colors = FERTILIZER_COLORS[type as keyof typeof FERTILIZER_COLORS] || { badge: '#4B5563', gradient: ['#4b5563', '#9ca3af'] };
-    const image = imageUrl ? { uri: imageUrl } : (FERTILIZER_IMAGES[type] || require('../../assets/NPK_bori.png'));
+    const typeKey = (type || '').toLowerCase();
+    const colors = FERTILIZER_COLORS[typeKey] || { badge: '#0284C7', gradient: ['#0369a1', '#0ea5e9'] };
+    const defaultImage = FERTILIZER_IMAGES[typeKey] || require('../../assets/NPK_bori.png');
+    const [imgSource, setImgSource] = useState(() => resolveFertilizerImage(imageUrl, typeKey));
+
+    useEffect(() => {
+        setImgSource(resolveFertilizerImage(imageUrl, typeKey));
+    }, [imageUrl, typeKey]);
+
     const isAvailable = availableQuantity > 0;
 
     return (
@@ -55,7 +80,8 @@ export default function FertilizerCard({
                 {/* TOP: Bag Image */}
                 <View style={styles.imageContainer}>
                     <Image
-                        source={image}
+                        source={imgSource}
+                        onError={() => setImgSource(defaultImage)}
                         style={styles.image}
                         resizeMode="cover"
                     />

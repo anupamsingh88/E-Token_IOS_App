@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, RefreshControl, Platform, Animated, FlatList, BackHandler } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, RefreshControl, Platform, Animated, FlatList, BackHandler, TextInput, ActivityIndicator } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scale, verticalScale, moderateScale, isTablet } from '../../utils/responsive';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFarmerData } from '../../contexts/FarmerDataContext';
@@ -10,6 +10,8 @@ import {
     UsageStats,
     FertilizerCard,
     Button,
+    KisanCodePromptModal,
+    ModernAlert,
 } from '../../components';
 import QRCarousel from '../../components/QRCarousel';
 import AdviceScreen from './AdviceScreen';
@@ -19,7 +21,7 @@ import TokenQRScreen from './TokenQRScreen';
 import BookingDetailModal from '../../components/BookingDetailModal';
 import FarmerProfileScreen from './FarmerProfileScreen';
 import { COLORS, SPACING, FONT_SIZES, FONT_WEIGHTS, BORDER_RADIUS, SHADOWS } from '../../constants';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { API_ENDPOINTS, API_BASE_URL } from '../../config/config';
 import { apiFetch } from '../../utils/apiClient';
 
@@ -109,7 +111,8 @@ const BookingCard = React.memo(({ booking, onPress }: { booking: any; onPress: (
                         {st === 'pending' ? 'लंबित' :
                             isApproved ? 'पुष्टि' :
                                 isCollected ? 'प्राप्त' :
-                                    isExtended ? 'विस्तारित' : 'रद्द'}
+                                    isExtended ? 'विस्तारित' :
+                                        ((booking.cancelled_by === 'SYSTEM_AUTO' || booking.cancellation_reason?.includes('स्वतः रद्द') || booking.cancellation_reason?.includes('किसान के न पहुँचने')) ? 'स्वतः रद्द' : 'रद्द')}
                     </Text>
                 </View>
             </View>
@@ -130,7 +133,25 @@ const BookingCard = React.memo(({ booking, onPress }: { booking: any; onPress: (
                 ))}
             </View>
 
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            {isCancelled && (
+                <View style={styles.cancelReasonBanner}>
+                    <Ionicons name="information-circle-outline" size={15} color="#DC2626" />
+                    <Text style={styles.cancelReasonText} numberOfLines={2}>
+                        रद्द करने का कारण: {booking.cancellation_reason || ((booking.cancelled_by === 'SYSTEM_AUTO') ? 'निर्धारित तारीख पर न पहुँचने के कारण स्वतः रद्द' : 'दुकानदार द्वारा रद्द किया गया')}
+                    </Text>
+                </View>
+            )}
+
+            {(isExtended || !!booking.extension_reason) && (
+                <View style={styles.extendReasonBanner}>
+                    <Ionicons name="calendar-outline" size={15} color="#D97706" />
+                    <Text style={styles.extendReasonText} numberOfLines={2}>
+                        तारीख बढ़ाने का कारण: {booking.extension_reason || 'दुकानदार द्वारा तारीख बढ़ाई गई'}
+                    </Text>
+                </View>
+            )}
+
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: (isCancelled || isExtended) ? 4 : 0 }}>
                 <Text style={styles.bookingPrice}>₹{totalPrice}</Text>
                 <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.textSecondary} />
             </View>
@@ -150,10 +171,13 @@ const MemoizedFarmerHomeTab = React.memo(({
     onFertilizerPress,
     loading
 }: any) => {
+    const insets = useSafeAreaInsets();
+    const bottomPadding = 80 + insets.bottom + SPACING.md;
+
     return (
         <ScrollView
             style={styles.scrollView}
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPadding }]}
             showsVerticalScrollIndicator={false}
             refreshControl={
                 <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />
@@ -336,7 +360,7 @@ const MemoizedFarmerBookingsTab = React.memo(({
                 initialNumToRender={5}
                 maxToRenderPerBatch={5}
                 windowSize={5}
-                removeClippedSubviews={Platform.OS === 'android'}
+                removeClippedSubviews={false}
                 contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
                 showsVerticalScrollIndicator={false}
                 refreshControl={
@@ -419,7 +443,8 @@ export interface Fertilizer {
     id: string;
     name: string;
     nameHindi: string;
-    type: 'urea' | 'dap' | 'npk' | 'mop';
+    type: string;
+    imageUrl?: string | null;
     pricePerBag: number;
     quota: {
         allowedQuantity: number;
@@ -520,7 +545,7 @@ const FarmerDashboard = ({
     const [bookingDateFilter, setBookingDateFilter] = useState<string | null>(null);
     const [showBookingCalendar, setShowBookingCalendar] = useState(false);
     const [calendarViewMonth, setCalendarViewMonth] = useState(new Date());
-    const { prefetchedData, isReady, refreshData } = useFarmerData();
+    const { prefetchedData, isReady, refreshData, updateKisanCode } = useFarmerData();
     const [displayName, setDisplayName] = useState(prefetchedData?.farmerName || farmerName);
     const [localFarmerPhoto, setLocalFarmerPhoto] = useState(farmerPhoto);
     const [fertilizers, setFertilizers] = useState<Fertilizer[]>(prefetchedData?.fertilizers || []);
@@ -534,6 +559,47 @@ const FarmerDashboard = ({
     const [selectedQRViewBooking, setSelectedQRViewBooking] = useState<any | null>(null);
     const [selectedRetailer, setSelectedRetailer] = useState<any | null>(prefetchedData?.retailer || null);
     const [showStatusDropdown, setShowStatusDropdown] = useState(false);
+
+    // Missing Kisan Code Popup State for existing farmers
+    const [kisanCode, setKisanCode] = useState(prefetchedData?.kisan_panjikaran_number || '');
+    const [showMissingCodeModal, setShowMissingCodeModal] = useState(false);
+    const [kisanSuccessAlertVisible, setKisanSuccessAlertVisible] = useState(false);
+    const hasCheckedCodeRef = useRef(false);
+
+    const handleSaveKisanCode = async (cleanCode: string) => {
+        const clean = cleanCode.trim().toUpperCase();
+        const response = await apiFetch(API_ENDPOINTS.updateFarmerProfile, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                farmer_id: farmerId,
+                kisan_panjikaran_number: clean,
+            })
+        });
+        const result = await response.json();
+        if (result.success) {
+            setKisanCode(clean);
+            setShowMissingCodeModal(false);
+            await updateKisanCode(clean, farmerId);
+            try {
+                if (farmerId) {
+                    await AsyncStorage.setItem(`kisan_code_submitted_${farmerId}`, 'true');
+                }
+                const sessionStr = await AsyncStorage.getItem('user_session');
+                if (sessionStr) {
+                    const session = JSON.parse(sessionStr);
+                    session.kisan_panjikaran_number = clean;
+                    await AsyncStorage.setItem('user_session', JSON.stringify(session));
+                }
+            } catch (_) { }
+            setTimeout(() => {
+                setKisanSuccessAlertVisible(true);
+            }, 300);
+            return true;
+        } else {
+            throw new Error(result.message || 'कृषक पंजिका कोड सहेजने में विफल');
+        }
+    };
 
     // Calendar logic computations
     const monthLabel = useMemo(() => formatMonthYearHindi(calendarViewMonth), [calendarViewMonth]);
@@ -574,9 +640,31 @@ const FarmerDashboard = ({
         if (prefetchedData.season) setCurrentSeason(prefetchedData.season);
         if (prefetchedData.farmerName) setDisplayName(prefetchedData.farmerName);
         if (prefetchedData.retailer) setSelectedRetailer(prefetchedData.retailer);
+        if (prefetchedData.kisan_panjikaran_number) setKisanCode(prefetchedData.kisan_panjikaran_number);
         setLoading(false);
+
+        // Check if kisan_panjikaran_number is missing for existing farmer
+        if (isReady && !hasCheckedCodeRef.current) {
+            hasCheckedCodeRef.current = true;
+            const existingCode = (prefetchedData.kisan_panjikaran_number || '').trim();
+            if (existingCode.length !== 10) {
+                if (farmerId) {
+                    AsyncStorage.getItem(`kisan_code_submitted_${farmerId}`).then((alreadySaved) => {
+                        if (alreadySaved !== 'true') {
+                            setTimeout(() => {
+                                setShowMissingCodeModal(true);
+                            }, 350);
+                        }
+                    }).catch(() => {
+                        setShowMissingCodeModal(true);
+                    });
+                } else {
+                    setShowMissingCodeModal(true);
+                }
+            }
+        }
         setRefreshing(false);
-    }, [prefetchedData]);
+    }, [prefetchedData, isReady]);
 
 
     // fetchData used only for pull-to-refresh and auto-refresh interval
@@ -742,6 +830,7 @@ const FarmerDashboard = ({
                                 farmerName={displayName}
                                 farmerId={farmerId}
                                 initialFertilizerId={preselectedFertilizer || undefined}
+                                isActive={activeTab === 'request'}
                                 onConfirmBooking={() => {
                                     setPreselectedFertilizer(null);
                                     resetToHome();
@@ -781,6 +870,21 @@ const FarmerDashboard = ({
             )}
 
             {renderContent()}
+
+            {/* Dedicated Mandatory Popup for Old Farmers to enter 10-digit Krishak Panjika Code */}
+            <KisanCodePromptModal
+                visible={showMissingCodeModal}
+                farmerName={displayName}
+                onSave={handleSaveKisanCode}
+            />
+
+            <ModernAlert
+                visible={kisanSuccessAlertVisible}
+                title="सफल"
+                message="आपका 10 अंकों का कृषक पंजिका कोड सफलतापूर्वक सहेज लिया गया है!"
+                type="success"
+                onClose={() => setKisanSuccessAlertVisible(false)}
+            />
 
             <BookingDetailModal
                 visible={!!selectedQRViewBooking}
@@ -934,6 +1038,42 @@ const styles = StyleSheet.create({
         fontSize: FONT_SIZES.md,
         fontWeight: 'bold',
         color: COLORS.primary,
+    },
+    cancelReasonBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#FEF2F2',
+        borderWidth: 1,
+        borderColor: '#FECACA',
+        borderRadius: 8,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        marginBottom: 6,
+        gap: 6,
+    },
+    cancelReasonText: {
+        fontSize: moderateScale(12),
+        color: '#991B1B',
+        fontWeight: '700',
+        flex: 1,
+    },
+    extendReasonBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#FFFBEB',
+        borderWidth: 1,
+        borderColor: '#FDE68A',
+        borderRadius: 8,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        marginBottom: 6,
+        gap: 6,
+    },
+    extendReasonText: {
+        fontSize: moderateScale(12),
+        color: '#92400E',
+        fontWeight: '700',
+        flex: 1,
     },
     storeName: {
         fontSize: FONT_SIZES.md,
@@ -1336,4 +1476,5 @@ const bStyles = StyleSheet.create({
         fontWeight: '800',
         color: COLORS.white,
     },
+
 });

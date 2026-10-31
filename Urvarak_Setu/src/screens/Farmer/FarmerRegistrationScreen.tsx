@@ -15,10 +15,13 @@ import {
     Pressable,
     Modal,
     StatusBar,
+    ActivityIndicator,
+    Keyboard,
+    Linking,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Input, Dropdown, WhatsAppIcon } from '../../components';
+import { Input, Dropdown, WhatsAppIcon, OTPInput } from '../../components';
 import BackButton from '../../components/BackButton';
 import ParticleBackground from '../../components/ParticleBackground';
 import {
@@ -32,13 +35,73 @@ import {
 import {
     HINDI_TEXT,
     COLORS,
+    SPACING,
 } from '../../constants';
-import { API_ENDPOINTS } from '../../config/config';
+import { API_ENDPOINTS, API_BASE_URL } from '../../config/config';
 import { apiFetch } from '../../utils/apiClient';
 import { pickFarmerPhoto, pickAadhaarPhoto, pickDocument, compressImage, pickMultipleDocuments, pickMultipleKhatauniPhotos } from '../../utils/imagePickerUtils';
 import { ModernAlert } from '../../components/ModernAlert';
 import { CameraIcon, CheckCircleIcon } from '../../components/PhotoUploadIcons';
 import { scale, verticalScale, moderateScale, isTablet, useResponsive } from '../../utils/responsive';
+import { useSettings } from '../../contexts/SettingsContext';
+import { resolveAppImage } from '../../utils/imageResolver';
+import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system/legacy';
+import { requireOptionalNativeModule } from 'expo-modules-core';
+
+// Open local or remote PDF file via dedicated viewer or fallback
+const openPdfFile = async (uri: string) => {
+    if (!uri) return;
+    try {
+        // 1. If it's already a remote URL (http/https):
+        if (uri.startsWith('http://') || uri.startsWith('https://')) {
+            const match = uri.match(/uploads\/[^\s\?#]+/i);
+            const viewerUrl = match
+                ? `${API_BASE_URL}/view_pdf.php?file=${encodeURIComponent(match[0])}`
+                : uri;
+            await Linking.openURL(viewerUrl);
+            return;
+        }
+
+        // 2. For local files (file:// or content://):
+        // Upload to temp preview endpoint so view_pdf.php can render it seamlessly
+        try {
+            const formData = new FormData();
+            const fileName = uri.split('/').pop()?.split('?')[0] || `doc_${Date.now()}.pdf`;
+            formData.append('pdf', {
+                uri,
+                name: fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`,
+                type: 'application/pdf',
+            } as any);
+
+            const uploadRes = await fetch(`${API_BASE_URL}/upload_temp_pdf.php`, {
+                method: 'POST',
+                body: formData,
+            });
+            const uploadData = await uploadRes.json();
+
+            if (uploadData.success && uploadData.file_path) {
+                const viewerUrl = `${API_BASE_URL}/view_pdf.php?file=${encodeURIComponent(uploadData.file_path)}`;
+                await Linking.openURL(viewerUrl);
+                return;
+            }
+        } catch (uploadErr) {
+            console.warn('Temp upload failed, trying fallback:', uploadErr);
+        }
+
+        // 3. Fallback: Sharing.shareAsync grants Intent.FLAG_GRANT_READ_URI_PERMISSION so PDF viewer apps can read it
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+            await Sharing.shareAsync(uri, {
+                mimeType: 'application/pdf',
+                dialogTitle: 'PDF दस्तावेज़ खोलें और देखें',
+                UTI: 'com.adobe.pdf'
+            });
+        }
+    } catch (err) {
+        console.warn('Error opening PDF:', err);
+    }
+};
 
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -95,7 +158,140 @@ const ImageSourceSelector = ({
     </Modal>
 );
 
-// Premium Upload Card Component
+// Local Document Viewer Modal Component
+const LocalDocumentViewerModal = ({
+    visible,
+    title,
+    files,
+    initialIndex = 0,
+    onClose,
+    onReplace,
+}: {
+    visible: boolean;
+    title: string;
+    files: { uri: string; name?: string; isPDF?: boolean }[];
+    initialIndex?: number;
+    onClose: () => void;
+    onReplace?: () => void;
+}) => {
+    const [page, setPage] = useState(initialIndex);
+
+    useEffect(() => {
+        if (visible) setPage(initialIndex);
+    }, [visible, initialIndex]);
+
+    if (!visible || !files || files.length === 0) return null;
+
+    const currentFile = files[Math.min(page, files.length - 1)];
+    const uri = currentFile ? (typeof currentFile === 'string' ? currentFile : currentFile.uri) : '';
+    const isPDF = currentFile && typeof currentFile === 'object' ? currentFile.isPDF : false;
+
+    return (
+        <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+            <View style={styles.viewerOverlay}>
+                <View style={styles.viewerHeaderSafeArea}>
+                    <View style={styles.viewerHeader}>
+                        <View style={{ flex: 1 }}>
+                            <Text style={styles.viewerTitle} numberOfLines={1}>{title}</Text>
+                            {files.length > 1 && (
+                                <Text style={styles.viewerSubtitle}>
+                                    पेज {page + 1} / {files.length}
+                                </Text>
+                            )}
+                        </View>
+                        <TouchableOpacity style={styles.viewerCloseBtn} onPress={onClose} activeOpacity={0.7}>
+                            <MaterialCommunityIcons name="close" size={24} color="#FFFFFF" />
+                        </TouchableOpacity>
+                    </View>
+                </View>
+
+                <View style={styles.viewerBody}>
+                    {isPDF ? (
+                        <TouchableOpacity
+                            style={styles.viewerPdfCard}
+                            activeOpacity={0.85}
+                            onPress={() => openPdfFile(uri)}
+                        >
+                            <MaterialCommunityIcons name="file-pdf-box" size={68} color="#DC2626" />
+                            <Text style={styles.viewerPdfTitle} numberOfLines={2}>
+                                {(currentFile as any)?.name || 'PDF दस्तावेज़'}
+                            </Text>
+                            <Text style={styles.viewerPdfDesc}>
+                                पूरा दस्तावेज़ व सभी पृष्ठ देखने के लिए नीचे दिए गए बटन पर टैप करें:
+                            </Text>
+                            <View style={styles.openPdfPrimaryBtn}>
+                                <MaterialCommunityIcons name="open-in-app" size={20} color="#FFFFFF" />
+                                <Text style={styles.openPdfPrimaryBtnText}>पूरा PDF खोलें और देखें</Text>
+                            </View>
+                        </TouchableOpacity>
+                    ) : (
+                        <Image
+                            source={{ uri }}
+                            style={styles.viewerImage}
+                            resizeMode="contain"
+                        />
+                    )}
+                </View>
+
+                <View style={styles.viewerFooterSafeArea}>
+                    <View style={styles.viewerFooter}>
+                        {files.length > 1 && (
+                            <View style={styles.paginationRow}>
+                                <TouchableOpacity
+                                    style={[styles.pageNavBtn, page === 0 && styles.pageNavBtnDisabled]}
+                                    disabled={page === 0}
+                                    onPress={() => setPage(p => Math.max(0, p - 1))}
+                                >
+                                    <MaterialCommunityIcons name="chevron-left" size={20} color={page === 0 ? '#64748B' : '#FFFFFF'} />
+                                    <Text style={[styles.pageNavText, page === 0 && { color: '#64748B' }]}>पिछला</Text>
+                                </TouchableOpacity>
+
+                                <View style={styles.dotsContainer}>
+                                    {files.map((_, i) => (
+                                        <View
+                                            key={i}
+                                            style={[styles.dot, i === page && styles.activeDot]}
+                                        />
+                                    ))}
+                                </View>
+
+                                <TouchableOpacity
+                                    style={[styles.pageNavBtn, page === files.length - 1 && styles.pageNavBtnDisabled]}
+                                    disabled={page === files.length - 1}
+                                    onPress={() => setPage(p => Math.min(files.length - 1, p + 1))}
+                                >
+                                    <Text style={[styles.pageNavText, page === files.length - 1 && { color: '#64748B' }]}>अगला</Text>
+                                    <MaterialCommunityIcons name="chevron-right" size={20} color={page === files.length - 1 ? '#64748B' : '#FFFFFF'} />
+                                </TouchableOpacity>
+                            </View>
+                        )}
+
+                        <View style={styles.viewerActionRow}>
+                            {onReplace && (
+                                <TouchableOpacity
+                                    style={styles.viewerSecondaryBtn}
+                                    onPress={() => {
+                                        onClose();
+                                        setTimeout(() => onReplace(), 250);
+                                    }}
+                                    activeOpacity={0.8}
+                                >
+                                    <MaterialCommunityIcons name="camera-retake-outline" size={18} color="#FFFFFF" />
+                                    <Text style={styles.viewerSecondaryBtnText}>दस्तावेज़ बदलें</Text>
+                                </TouchableOpacity>
+                            )}
+                            <TouchableOpacity style={styles.viewerPrimaryBtn} onPress={onClose} activeOpacity={0.8}>
+                                <Text style={styles.viewerPrimaryBtnText}>ठीक है</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </View>
+        </Modal>
+    );
+};
+
+// Premium Upload Card Component with Rich Image Preview
 const PremiumUploadCard = ({
     label,
     icon,
@@ -103,61 +299,115 @@ const PremiumUploadCard = ({
     onPress,
     error,
     isPDF = false,
+    fileCount = 1,
+    onView,
     onClear,
 }: {
-    label: string,
-    icon: (size: number, color: string) => React.ReactNode,
-    value: any,
-    onPress: () => void,
-    error?: string,
-    isPDF?: boolean,
-    fileName?: string,
-    onClear?: () => void
-}) => (
-    <View style={styles.uploadCardWrapper}>
-        <TouchableOpacity
-            style={[styles.uploadCard, value && styles.uploadCardSelected, error && styles.uploadCardError]}
-            onPress={onPress}
-            activeOpacity={0.8}
-        >
-            <View style={styles.uploadCardInner}>
-                {value && !isPDF ? (
-                    <Image
-                        source={{ uri: typeof value === 'string' ? value : value.uri }}
-                        style={styles.uploadCardFullPreview}
-                    />
+    label: string;
+    icon: (size: number, color: string) => React.ReactNode;
+    value: any;
+    onPress: () => void;
+    error?: string;
+    isPDF?: boolean;
+    fileCount?: number;
+    onView?: () => void;
+    onClear?: () => void;
+}) => {
+    const uri = value ? (typeof value === 'string' ? value : value.uri) : null;
+    const fileName = value && typeof value === 'object' ? value.name : '';
+
+    return (
+        <View style={styles.uploadCardWrapper}>
+            <View style={[styles.uploadCard, value && styles.uploadCardSelected, error && styles.uploadCardError]}>
+                {value ? (
+                    // Uploaded State with Large, Clear Preview
+                    <View style={styles.uploadedContainer}>
+                        <TouchableOpacity
+                            style={styles.previewImageContainer}
+                            activeOpacity={0.85}
+                            onPress={isPDF ? () => openPdfFile(uri) : (onView || onPress)}
+                        >
+                            {isPDF ? (
+                                <View style={styles.pdfPreviewBox}>
+                                    <MaterialCommunityIcons name="file-pdf-box" size={38} color="#DC2626" />
+                                    <Text style={styles.pdfFileName} numberOfLines={1}>
+                                        {fileName || 'PDF दस्तावेज़'}
+                                    </Text>
+                                    <View style={styles.viewBadge}>
+                                        <MaterialCommunityIcons name="open-in-new" size={12} color="#0284C7" />
+                                        <Text style={styles.viewBadgeText}>PDF खोलें</Text>
+                                    </View>
+                                </View>
+                            ) : (
+                                <View style={{ width: '100%', height: '100%' }}>
+                                    <Image
+                                        source={{ uri }}
+                                        style={styles.cardImagePreview}
+                                        resizeMode="cover"
+                                    />
+                                    <View style={styles.previewOverlayPill}>
+                                        <MaterialCommunityIcons name="eye" size={12} color="#FFFFFF" />
+                                        <Text style={styles.previewOverlayText}>बड़ा देखें</Text>
+                                    </View>
+                                </View>
+                            )}
+
+                            {fileCount > 1 && (
+                                <View style={styles.multiFileBadge}>
+                                    <MaterialCommunityIcons name="layers" size={11} color="#FFFFFF" />
+                                    <Text style={styles.multiFileBadgeText}>{fileCount} पेज</Text>
+                                </View>
+                            )}
+
+                            <View style={styles.checkBadge}>
+                                <MaterialCommunityIcons name="check" size={13} color="#FFFFFF" />
+                            </View>
+                        </TouchableOpacity>
+
+                        <View style={styles.cardInfoRow}>
+                            <Text style={styles.uploadCardLabel} numberOfLines={1}>{label}</Text>
+                        </View>
+
+                        <View style={styles.cardActionRow}>
+                            {!isPDF && (
+                                <TouchableOpacity style={styles.actionBtnSmall} onPress={onView || onPress}>
+                                    <MaterialCommunityIcons name="eye-outline" size={14} color="#0284C7" />
+                                    <Text style={[styles.actionBtnText, { color: '#0284C7' }]}>देखें</Text>
+                                </TouchableOpacity>
+                            )}
+                            <TouchableOpacity style={[styles.actionBtnSmall, isPDF && { flex: 1 }]} onPress={onPress}>
+                                <MaterialCommunityIcons name="pencil-outline" size={14} color="#15803D" />
+                                <Text style={[styles.actionBtnText, { color: '#15803D' }]}>बदलें</Text>
+                            </TouchableOpacity>
+                            {onClear && (
+                                <TouchableOpacity style={styles.actionBtnSmallDanger} onPress={onClear}>
+                                    <MaterialCommunityIcons name="trash-can-outline" size={14} color="#DC2626" />
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                    </View>
                 ) : (
-                    <View style={[styles.uploadCardIconBG, value && styles.uploadCardIconBGSelected]}>
-                        {value && isPDF ? (
-                            <MaterialCommunityIcons name="file-pdf-box" size={28} color="#D32F2F" />
-                        ) : (
-                            icon(26, error ? '#D32F2F' : MUSTARD)
-                        )}
-                    </View>
-                )}
-
-                <View style={styles.uploadCardContent}>
-                    <Text style={styles.uploadCardLabel} numberOfLines={1}>{label}</Text>
-                    <Text style={[styles.uploadCardStatus, value && styles.uploadCardStatusSelected]}>
-                        {value ? "चुन लिया गया" : "अपलोड करें"}
-                    </Text>
-                </View>
-
-                {value && (
-                    <View style={styles.checkmarkBadge}>
-                        <MaterialCommunityIcons name="check-circle" size={16} color="#FFF" />
-                    </View>
+                    // Empty State
+                    <TouchableOpacity
+                        style={styles.emptyUploadBtn}
+                        onPress={onPress}
+                        activeOpacity={0.7}
+                    >
+                        <View style={[styles.uploadCardIconBG, error && { backgroundColor: '#FFEBEE' }]}>
+                            {icon(26, error ? '#D32F2F' : MUSTARD)}
+                        </View>
+                        <Text style={styles.uploadCardLabel} numberOfLines={1}>{label}</Text>
+                        <View style={styles.uploadCtaPill}>
+                            <MaterialCommunityIcons name="plus" size={13} color={MUSTARD_DARK} />
+                            <Text style={styles.uploadCtaText}>अपलोड करें</Text>
+                        </View>
+                    </TouchableOpacity>
                 )}
             </View>
-        </TouchableOpacity>
-        {onClear && value && (
-            <TouchableOpacity onPress={onClear} style={{ marginTop: 8, padding: 4 }}>
-                <Text style={{ textAlign: 'center', color: '#D32F2F', fontSize: 13, fontWeight: 'bold' }}>हटाएं</Text>
-            </TouchableOpacity>
-        )}
-        {error ? <Text style={styles.errorText} numberOfLines={1}>{error}</Text> : null}
-    </View>
-);
+            {error ? <Text style={styles.errorText} numberOfLines={1}>{error}</Text> : null}
+        </View>
+    );
+};
 
 // Premium Button Component
 const PremiumButton = ({ title, onPress, loading, disabled }: { title: string, onPress: () => void, loading?: boolean, disabled?: boolean }) => {
@@ -224,6 +474,11 @@ export default function FarmerRegistrationScreen({
     onBack: () => void;
 }) {
     const { isTablet: isTabletMode, isLandscape } = useResponsive();
+    const { settings } = useSettings();
+    const defaultBg = require('../../../assets/Farmer in golden wheat field.png');
+    const defaultLogo = require('../../../assets/icon.png');
+    const bgSource = resolveAppImage(settings?.farmer_app_bg_image_url || settings?.bg_image_url, defaultBg);
+    const logoSource = resolveAppImage(settings?.farmer_app_logo_url || settings?.farmer_app_icon_url || settings?.logo_url, defaultLogo);
     const inputHeight = isTabletMode ? 56 : 52;
     const inputFontSize = isTabletMode ? 17 : 16;
     const iconSize = isTabletMode ? 20 : 18;
@@ -239,6 +494,7 @@ export default function FarmerRegistrationScreen({
         retailer_id: '',
         retailer_name: '',
         registry_id: '',
+        kisan_panjikaran_number: '',
         khatauni_number: '',
         land_area: '',
         wa_notification: false,
@@ -247,18 +503,54 @@ export default function FarmerRegistrationScreen({
     const [farmerPhoto, setFarmerPhoto] = useState<string | null>(null);
     const [aadhaarFile, setAadhaarFile] = useState<{ uri: string, name: string, isPDF: boolean } | null>(null);
     const [khatauniFiles, setKhatauniFiles] = useState<{ uri: string, name: string, isPDF: boolean }[]>([]);
+    const [kisanPanjikaranFiles, setKisanPanjikaranFiles] = useState<{ uri: string, name: string, isPDF: boolean }[]>([]);
     const [loading, setLoading] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
 
     // UI Local States
-    const [pickerType, setPickerType] = useState<'photo' | 'aadhaar' | 'khatauni' | null>(null);
+    const [pickerType, setPickerType] = useState<'photo' | 'aadhaar' | 'khatauni' | 'kisan_panjikaran' | null>(null);
+    const [previewModal, setPreviewModal] = useState<{
+        visible: boolean;
+        title: string;
+        files: { uri: string; name?: string; isPDF?: boolean }[];
+        index: number;
+        pickerKey?: 'photo' | 'aadhaar' | 'khatauni' | 'kisan_panjikaran';
+    }>({ visible: false, title: '', files: [], index: 0 });
+
+    // Registration OTP States
+    const [showOtpModal, setShowOtpModal] = useState(false);
+    const [otp, setOtp] = useState('');
+    const [otpError, setOtpError] = useState('');
+    const [otpSubmitting, setOtpSubmitting] = useState(false);
+    const [resendTimer, setResendTimer] = useState(0);
+    const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+    const startResendTimer = () => {
+        setResendTimer(60);
+        if (timerRef.current) clearInterval(timerRef.current);
+        timerRef.current = setInterval(() => {
+            setResendTimer((prev) => {
+                if (prev <= 1) {
+                    if (timerRef.current) clearInterval(timerRef.current);
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+    };
+
+    useEffect(() => {
+        return () => {
+            if (timerRef.current) clearInterval(timerRef.current);
+        };
+    }, []);
 
     const [alertConfig, setAlertConfig] = useState<{
         visible: boolean, title: string, message: string, type: 'success' | 'error' | 'warning' | 'info',
         buttons?: any[], onClose?: () => void
     }>({ visible: false, title: '', message: '', type: 'info' });
 
-    const lastCheckedStatusRef = useRef({ mobile: '', aadhaar: '', registry_id: '' });
+    const lastCheckedStatusRef = useRef({ mobile: '', aadhaar: '', registry_id: '', kisan_panjikaran_number: '' });
     const hasShownStatusAlertRef = useRef(false);
 
     // Location Data States
@@ -457,23 +749,45 @@ export default function FarmerRegistrationScreen({
     };
 
     const handleAadhaarChange = (text: string) => {
+        const clean = text.replace(/[^0-9]/g, '');
         if (/[^0-9]/.test(text)) {
             setErrors((prev) => ({ ...prev, ['aadhaar']: 'आधार नंबर में केवल अंक होने चाहिए' }));
-            setFormData((prev) => ({ ...prev, aadhaar: text.replace(/[^0-9]/g, '') }));
+            setFormData((prev) => ({ ...prev, aadhaar: clean }));
         } else {
             setFormData((prev) => ({ ...prev, aadhaar: text }));
             if (errors['aadhaar']) setErrors((prev) => ({ ...prev, ['aadhaar']: '' }));
         }
+        if (clean.length === 12) {
+            Keyboard.dismiss();
+        }
     };
 
     const handleLandAreaChange = (text: string) => {
+        let cleaned = text.replace(/[^0-9.]/g, '');
+        const parts = cleaned.split('.');
+        if (parts.length > 2) {
+            cleaned = parts[0] + '.' + parts.slice(1).join('');
+        }
+        if (parts[0] && parts[0].length > 4) {
+            cleaned = parts[0].slice(0, 4) + (parts.length > 1 ? '.' + parts[1] : '');
+        }
+        if (cleaned.length > 8) {
+            cleaned = cleaned.slice(0, 8);
+        }
+
         if (/[^0-9.]/.test(text)) {
             setErrors((prev) => ({ ...prev, ['land_area']: 'केवल अंक और दशमलव की अनुमति है' }));
-            setFormData((prev) => ({ ...prev, land_area: text.replace(/[^0-9.]/g, '') }));
+        } else if (text.length >= 10 || /^[6-9][0-9]{9}$/.test(text.trim())) {
+            setErrors((prev) => ({ ...prev, ['land_area']: 'यहाँ मोबाइल नंबर नहीं, जमीन का क्षेत्रफल (हेक्टेयर) दर्ज करें' }));
         } else {
-            setFormData((prev) => ({ ...prev, land_area: text }));
-            if (errors['land_area']) setErrors((prev) => ({ ...prev, ['land_area']: '' }));
+            const num = parseFloat(cleaned);
+            if (num > 1000) {
+                setErrors((prev) => ({ ...prev, ['land_area']: 'अधिकतम 1000 हेक्टेयर दर्ज कर सकते हैं' }));
+            } else if (errors['land_area']) {
+                setErrors((prev) => ({ ...prev, ['land_area']: '' }));
+            }
         }
+        setFormData((prev) => ({ ...prev, land_area: cleaned }));
     };
 
     const handleImageSelect = (source: 'camera' | 'gallery' | 'pdf') => {
@@ -484,6 +798,12 @@ export default function FarmerRegistrationScreen({
             if (type === 'khatauni') {
                 pickMultipleDocuments((files) => {
                     setKhatauniFiles(prev => [...prev, ...files.map(f => ({ ...f, isPDF: true }))]);
+                }, (m) => showAlert('Error', m, 'error'));
+                return;
+            }
+            if (type === 'kisan_panjikaran') {
+                pickMultipleDocuments((files) => {
+                    setKisanPanjikaranFiles(prev => [...prev, ...files.map(f => ({ ...f, isPDF: true }))]);
                 }, (m) => showAlert('Error', m, 'error'));
                 return;
             }
@@ -499,6 +819,17 @@ export default function FarmerRegistrationScreen({
                 setKhatauniFiles(prev => [
                     ...prev,
                     ...compressedUris.map((compressed, i) => ({ uri: compressed, name: `Khatauni_${Date.now()}_${i}.jpg`, isPDF: false }))
+                ]);
+            }, (m) => showAlert('Error', m, 'error'));
+            return;
+        }
+
+        if (type === 'kisan_panjikaran') {
+            pickMultipleKhatauniPhotos(source, async (uris: string[]) => {
+                const compressedUris = await Promise.all(uris.map(uri => compressImage(uri)));
+                setKisanPanjikaranFiles(prev => [
+                    ...prev,
+                    ...compressedUris.map((compressed, i) => ({ uri: compressed, name: `Kisan_Panjikaran_${Date.now()}_${i}.jpg`, isPDF: false }))
                 ]);
             }, (m) => showAlert('Error', m, 'error'));
             return;
@@ -528,10 +859,28 @@ export default function FarmerRegistrationScreen({
         if (!formData.retailer_id) newErrors['retailer_id'] = 'रिटेलर आवश्यक है';
         if (!formData.khatauni_number.trim()) newErrors['khatauni_number'] = 'खतौनी / गाटा संख्या आवश्यक है';
         if (!formData.registry_id.trim()) newErrors['registry_id'] = 'रजिस्ट्री आईडी आवश्यक है';
-        if (!formData.land_area.trim()) newErrors['land_area'] = 'क्षेत्रफल आवश्यक है';
+        if (!formData.kisan_panjikaran_number.trim()) {
+            newErrors['kisan_panjikaran_number'] = 'कृषक पंजिका कोड आवश्यक है';
+        } else if (formData.kisan_panjikaran_number.trim().length !== 10) {
+            newErrors['kisan_panjikaran_number'] = 'कृषक पंजिका कोड ठीक 10 अंकों का होना चाहिए';
+        }
+        if (!formData.land_area.trim()) {
+            newErrors['land_area'] = 'क्षेत्रफल आवश्यक है';
+        } else {
+            const cleanArea = formData.land_area.trim();
+            const areaNum = parseFloat(cleanArea);
+            if (isNaN(areaNum) || areaNum <= 0) {
+                newErrors['land_area'] = 'क्षेत्रफल 0 से अधिक होना चाहिए';
+            } else if (cleanArea.length >= 10 || /^[6-9][0-9]{9}$/.test(cleanArea)) {
+                newErrors['land_area'] = 'यहाँ मोबाइल नंबर नहीं, हेक्टेयर में जमीन का क्षेत्रफल दर्ज करें';
+            } else if (areaNum > 1000) {
+                newErrors['land_area'] = 'कृपया मान्य क्षेत्रफल दर्ज करें (अधिकतम 1000 हेक्टेयर)';
+            }
+        }
         if (!farmerPhoto) newErrors['farmerPhoto'] = 'फोटो आवश्यक है';
         if (!aadhaarFile) newErrors['aadhaarPhoto'] = 'आधार फोटो आवश्यक है';
         if (khatauniFiles.length === 0) newErrors['khatauniPhoto'] = 'खतौनी / गाटा फोटो आवश्यक है';
+        if (kisanPanjikaranFiles.length === 0) newErrors['kisanPanjikaranPhoto'] = 'पंजीकरण पर्ची आवश्यक है';
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
@@ -540,16 +889,17 @@ export default function FarmerRegistrationScreen({
         const m = formData.mobile.trim();
         const a = formData.aadhaar.trim();
         const r = formData.registry_id.trim();
+        const k = formData.kisan_panjikaran_number.trim();
 
-        if (m.length < 10 && a.length < 12 && r.length === 0) return;
+        if (m.length < 10 && a.length < 12 && r.length === 0 && k.length === 0) return;
         if (hasShownStatusAlertRef.current) return;
 
         const lastChecked = lastCheckedStatusRef.current;
-        if (lastChecked.mobile === m && lastChecked.aadhaar === a && lastChecked.registry_id === r) {
+        if (lastChecked.mobile === m && lastChecked.aadhaar === a && lastChecked.registry_id === r && lastChecked.kisan_panjikaran_number === k) {
             return;
         }
 
-        lastCheckedStatusRef.current = { mobile: m, aadhaar: a, registry_id: r };
+        lastCheckedStatusRef.current = { mobile: m, aadhaar: a, registry_id: r, kisan_panjikaran_number: k };
 
         try {
             const response = await apiFetch(API_ENDPOINTS.checkFarmerStatus, {
@@ -560,7 +910,8 @@ export default function FarmerRegistrationScreen({
                 body: JSON.stringify({
                     mobile: m,
                     aadhaar: a,
-                    registry_id: r
+                    registry_id: r,
+                    kisan_panjikaran_number: k
                 })
             });
             const result = await response.json();
@@ -577,6 +928,7 @@ export default function FarmerRegistrationScreen({
         }
     };
 
+    // Step 1: Validate form and send OTP before submission
     const handleRegister = async () => {
         if (!validateForm()) {
             showAlert('त्रुटि', 'कृपया सभी आवश्यक फ़ील्ड भरें।', 'error');
@@ -584,6 +936,65 @@ export default function FarmerRegistrationScreen({
         }
 
         setLoading(true);
+
+        try {
+            const response = await apiFetch(API_ENDPOINTS.sendRegistrationOtp, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mobile: formData.mobile.trim() }),
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                setOtp('');
+                setOtpError('');
+                setShowOtpModal(true);
+                startResendTimer();
+            } else {
+                showAlert('पंजीकरण सूचना', result.message || 'OTP भेजने में विफल।', 'error');
+            }
+        } catch (error) {
+            showAlert('नेटवर्क त्रुटि', 'OTP सर्वर से संपर्क नहीं हो सका। कृपया इंटरनेट कनेक्शन जांचें।', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Step 2: Resend OTP handler with cooldown protection
+    const handleResendOtp = async () => {
+        if (resendTimer > 0 || otpSubmitting) return;
+
+        try {
+            const response = await apiFetch(API_ENDPOINTS.sendRegistrationOtp, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mobile: formData.mobile.trim() }),
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                setOtp('');
+                setOtpError('');
+                startResendTimer();
+                showAlert('सफल', 'नया OTP आपके मोबाइल नंबर पर भेज दिया गया है।', 'success');
+            } else {
+                setOtpError(result.message || 'OTP पुनः भेजने में समस्या आई।');
+            }
+        } catch (error) {
+            setOtpError('नेटवर्क त्रुटि: OTP नहीं भेजा जा सका।');
+        }
+    };
+
+    // Step 3: Final verification & multipart submission
+    const handleVerifyAndSubmit = async () => {
+        const cleanOtp = otp.trim();
+        if (!cleanOtp || cleanOtp.length !== 6) {
+            setOtpError('कृपया 6 अंकों का सही OTP दर्ज करें');
+            return;
+        }
+
+        setOtpSubmitting(true);
+        setOtpError('');
 
         try {
             const formDataToSubmit = new FormData();
@@ -599,6 +1010,7 @@ export default function FarmerRegistrationScreen({
                 retailer_name: 'selected_retailer_name',
                 khatauni_number: 'khatauni_number',
                 registry_id: 'registry_id',
+                kisan_panjikaran_number: 'kisan_panjikaran_number',
                 land_area: 'land_area',
             };
 
@@ -608,6 +1020,7 @@ export default function FarmerRegistrationScreen({
             });
 
             formDataToSubmit.append('wa_notification', formData.wa_notification ? '1' : '0');
+            formDataToSubmit.append('otp', cleanOtp);
 
             if (farmerPhoto) {
                 formDataToSubmit.append('farmer_photo', {
@@ -623,6 +1036,16 @@ export default function FarmerRegistrationScreen({
                     name: aadhaarFile.name,
                     type: aadhaarFile.isPDF ? 'application/pdf' : 'image/jpeg',
                 } as any);
+            }
+
+            if (kisanPanjikaranFiles.length > 0) {
+                kisanPanjikaranFiles.forEach((file, index) => {
+                    formDataToSubmit.append('kisan_panjikaran_photo[]', {
+                        uri: file.uri,
+                        name: file.name,
+                        type: file.isPDF ? 'application/pdf' : 'image/jpeg',
+                    } as any);
+                });
             }
 
             if (khatauniFiles.length > 0) {
@@ -642,14 +1065,19 @@ export default function FarmerRegistrationScreen({
 
             const result = await response.json();
             if (result.status === 'success' || result.success) {
+                setShowOtpModal(false);
                 showAlert('सफल', 'अपने सभी दस्तावेज़ अपने रिटेलर के पास ले जाकर पुष्टि कराएं।', 'success', onBack);
             } else {
-                showAlert('त्रुटि', result.message || 'पंजीकरण विफल रहा।', 'error');
+                let errorMsg = result.message || 'पंजीकरण विफल रहा।';
+                if (/SQLSTATE|Database error|khasra_rukba|column|table|syntax error/i.test(errorMsg)) {
+                    errorMsg = 'पंजीकरण में समस्या आई। कृपया दर्ज की गई जानकारी (जैसे क्षेत्रफल) जांचें।';
+                }
+                setOtpError(errorMsg);
             }
         } catch (error) {
-            showAlert('त्रुटि', 'सर्वर से संपर्क करने में समस्या आई।', 'error');
+            setOtpError('सर्वर से संपर्क करने में समस्या आई। पुनः प्रयास करें।');
         } finally {
-            setLoading(false);
+            setOtpSubmitting(false);
         }
     };
 
@@ -660,7 +1088,7 @@ export default function FarmerRegistrationScreen({
     return (
         <View style={styles.container}>
             <Image
-                source={require('../../../assets/Farmer in golden wheat field.png')}
+                source={bgSource}
                 style={styles.backgroundImage}
                 resizeMode="cover"
             />
@@ -685,7 +1113,7 @@ export default function FarmerRegistrationScreen({
                                 <BackButton onPress={onBack} color="#FFFFFF" style={styles.headerBack} />
                                 <Text style={[styles.headerTitle, isTabletMode && { fontSize: 28 }]}>किसान पंजीकरण</Text>
                                 <View style={styles.logoContainer}>
-                                    <Image source={require('../../../assets/icon.png')} style={styles.headerLogo} />
+                                    <Image source={logoSource} style={styles.headerLogo} />
                                 </View>
                             </View>
                         </LinearGradient>
@@ -709,6 +1137,9 @@ export default function FarmerRegistrationScreen({
                                                         required={false}
                                                         value={formData.name}
                                                         onChangeText={handleNameChange}
+                                                        autoComplete="name"
+                                                        textContentType="name"
+                                                        importantForAutofill="yes"
                                                         icon={icon}
                                                         containerStyle={styles.inputOverrides}
                                                         activeColor={MUSTARD}
@@ -731,6 +1162,9 @@ export default function FarmerRegistrationScreen({
                                                         onBlur={checkPreRegistrationStatus}
                                                         keyboardType="phone-pad"
                                                         maxLength={10}
+                                                        autoComplete="tel"
+                                                        textContentType="telephoneNumber"
+                                                        importantForAutofill="yes"
                                                         icon={icon}
                                                         containerStyle={styles.inputOverrides}
                                                         activeColor={MUSTARD}
@@ -756,6 +1190,9 @@ export default function FarmerRegistrationScreen({
                                                         onBlur={checkPreRegistrationStatus}
                                                         keyboardType="number-pad"
                                                         maxLength={12}
+                                                        autoComplete="off"
+                                                        textContentType="none"
+                                                        importantForAutofill="no"
                                                         icon={icon}
                                                         containerStyle={styles.inputOverrides}
                                                         activeColor={MUSTARD}
@@ -885,6 +1322,9 @@ export default function FarmerRegistrationScreen({
                                                         required={false}
                                                         value={formData.khatauni_number}
                                                         onChangeText={(v) => updateField('khatauni_number', v)}
+                                                        autoComplete="off"
+                                                        textContentType="none"
+                                                        importantForAutofill="no"
                                                         icon={icon}
                                                         containerStyle={styles.inputOverrides}
                                                         activeColor={MUSTARD}
@@ -905,6 +1345,37 @@ export default function FarmerRegistrationScreen({
                                                         value={formData.registry_id}
                                                         onChangeText={(v) => updateField('registry_id', v)}
                                                         onBlur={checkPreRegistrationStatus}
+                                                        autoComplete="off"
+                                                        textContentType="none"
+                                                        importantForAutofill="no"
+                                                        icon={icon}
+                                                        containerStyle={styles.inputOverrides}
+                                                        activeColor={MUSTARD}
+                                                        height={inputHeight}
+                                                        fontSize={inputFontSize}
+                                                    />
+                                                )}
+                                            </LabeledField>
+                                        </View>
+                                    </View>
+
+                                    {/* Row 5B: Krishak Panjika Code (Right after Registry ID) */}
+                                    <View style={isTabletMode ? styles.formRow : undefined}>
+                                        <View style={isTabletMode ? styles.formCol : undefined}>
+                                            <LabeledField label="कृषक पंजिका कोड (10 अंक)" icon={(c) => <IdCardIcon size={iconSize} color={c} />} required error={errors.kisan_panjikaran_number}>
+                                                {(icon) => (
+                                                    <Input
+                                                        label=""
+                                                        placeholder="10 अंकों का कृषक पंजिका कोड दर्ज करें"
+                                                        required={true}
+                                                        value={formData.kisan_panjikaran_number}
+                                                        onChangeText={(v) => updateField('kisan_panjikaran_number', v.replace(/[^0-9]/g, ''))}
+                                                        keyboardType="numeric"
+                                                        maxLength={10}
+                                                        onBlur={checkPreRegistrationStatus}
+                                                        autoComplete="off"
+                                                        textContentType="none"
+                                                        importantForAutofill="no"
                                                         icon={icon}
                                                         containerStyle={styles.inputOverrides}
                                                         activeColor={MUSTARD}
@@ -928,6 +1399,10 @@ export default function FarmerRegistrationScreen({
                                                         value={formData.land_area}
                                                         onChangeText={handleLandAreaChange}
                                                         keyboardType="decimal-pad"
+                                                        maxLength={8}
+                                                        autoComplete="off"
+                                                        textContentType="none"
+                                                        importantForAutofill="no"
                                                         icon={icon}
                                                         containerStyle={styles.inputOverrides}
                                                         activeColor={MUSTARD}
@@ -938,19 +1413,21 @@ export default function FarmerRegistrationScreen({
                                             </LabeledField>
                                         </View>
 
-                                        <View style={isTabletMode ? [styles.formCol, { justifyContent: 'flex-start', paddingTop: 22 }] : undefined}>
-                                            <TouchableOpacity
-                                                style={[styles.whatsappRow, formData.wa_notification && styles.whatsappActive, isTabletMode && { height: inputHeight, marginBottom: 10 }]}
-                                                onPress={() => updateField('wa_notification', !formData.wa_notification)}
-                                                activeOpacity={0.7}
-                                            >
-                                                <WhatsAppIcon size={22} color="#25D366" />
-                                                <Text style={styles.whatsappLabel}>WhatsApp अपडेट पाएँ</Text>
-                                                <View style={[styles.switch, formData.wa_notification && styles.switchActive]}>
-                                                    <View style={[styles.switchBall, formData.wa_notification && styles.switchBallActive]} />
-                                                </View>
-                                            </TouchableOpacity>
-                                        </View>
+                                        {isTabletMode && (
+                                            <View style={[styles.formCol, { justifyContent: 'flex-start', paddingTop: 22 }]}>
+                                                <TouchableOpacity
+                                                    style={[styles.whatsappRow, formData.wa_notification && styles.whatsappActive, { height: inputHeight, marginBottom: 10 }]}
+                                                    onPress={() => updateField('wa_notification', !formData.wa_notification)}
+                                                    activeOpacity={0.7}
+                                                >
+                                                    <WhatsAppIcon size={22} color="#25D366" />
+                                                    <Text style={styles.whatsappLabel}>WhatsApp अपडेट पाएँ</Text>
+                                                    <View style={[styles.switch, formData.wa_notification && styles.switchActive]}>
+                                                        <View style={[styles.switchBall, formData.wa_notification && styles.switchBallActive]} />
+                                                    </View>
+                                                </TouchableOpacity>
+                                            </View>
+                                        )}
                                     </View>
 
                                     <View style={styles.divider} />
@@ -962,34 +1439,89 @@ export default function FarmerRegistrationScreen({
                                             icon={(s, c) => <CameraIcon size={s} color={c} />}
                                             value={farmerPhoto}
                                             onPress={() => setPickerType('photo')}
+                                            onView={() => setPreviewModal({
+                                                visible: true,
+                                                title: 'किसान की फोटो',
+                                                files: [{ uri: farmerPhoto! }],
+                                                index: 0,
+                                                pickerKey: 'photo',
+                                            })}
+                                            onClear={() => setFarmerPhoto(null)}
                                             error={errors.farmerPhoto}
                                         />
 
                                         <PremiumUploadCard
-                                            label="आधार"
+                                            label="आधार कार्ड"
                                             icon={(s, c) => <IdCardIcon size={s} color={c} />}
                                             value={aadhaarFile}
                                             onPress={() => setPickerType('aadhaar')}
+                                            onView={() => {
+                                                if (aadhaarFile?.isPDF) {
+                                                    openPdfFile(aadhaarFile.uri);
+                                                } else {
+                                                    setPreviewModal({
+                                                        visible: true,
+                                                        title: 'आधार कार्ड',
+                                                        files: [aadhaarFile!],
+                                                        index: 0,
+                                                        pickerKey: 'aadhaar',
+                                                    });
+                                                }
+                                            }}
+                                            onClear={() => setAadhaarFile(null)}
                                             error={errors.aadhaarPhoto}
                                             isPDF={aadhaarFile?.isPDF}
                                         />
+                                    </View>
 
-                                        <View style={{ flex: 1 }}>
-                                            <PremiumUploadCard
-                                                label="खतौनी"
-                                                icon={(s, c) => <DocumentIcon size={s} color={c} />}
-                                                value={khatauniFiles.length > 0 ? khatauniFiles[0] : null}
-                                                onPress={() => setPickerType('khatauni')}
-                                                error={errors.khatauniPhoto}
-                                                isPDF={khatauniFiles.length > 0 && khatauniFiles[0].isPDF}
-                                                onClear={() => setKhatauniFiles([])}
-                                            />
-                                            {khatauniFiles.length > 0 && (
-                                                <Text style={{ textAlign: 'center', marginTop: 8, fontSize: 13, color: '#4CAF50', fontWeight: 'bold' }}>
-                                                    {khatauniFiles.length} दस्तावेज़ चयनित
-                                                </Text>
-                                            )}
-                                        </View>
+                                    <View style={[styles.uploadRow, isTabletMode && { gap: 14 }]}>
+                                        <PremiumUploadCard
+                                            label="खतौनी कॉपी"
+                                            icon={(s, c) => <DocumentIcon size={s} color={c} />}
+                                            value={khatauniFiles.length > 0 ? khatauniFiles[0] : null}
+                                            fileCount={khatauniFiles.length}
+                                            onPress={() => setPickerType('khatauni')}
+                                            onView={() => {
+                                                if (khatauniFiles.length === 1 && khatauniFiles[0].isPDF) {
+                                                    openPdfFile(khatauniFiles[0].uri);
+                                                } else {
+                                                    setPreviewModal({
+                                                        visible: true,
+                                                        title: 'खतौनी कॉपी',
+                                                        files: khatauniFiles,
+                                                        index: 0,
+                                                        pickerKey: 'khatauni',
+                                                    });
+                                                }
+                                            }}
+                                            error={errors.khatauniPhoto}
+                                            isPDF={khatauniFiles.length > 0 && khatauniFiles[0].isPDF}
+                                            onClear={() => setKhatauniFiles([])}
+                                        />
+
+                                        <PremiumUploadCard
+                                            label="पंजीकरण पर्ची"
+                                            icon={(s, c) => <MaterialCommunityIcons name="receipt-text-outline" size={s} color={c} />}
+                                            value={kisanPanjikaranFiles.length > 0 ? kisanPanjikaranFiles[0] : null}
+                                            fileCount={kisanPanjikaranFiles.length}
+                                            onPress={() => setPickerType('kisan_panjikaran')}
+                                            onView={() => {
+                                                if (kisanPanjikaranFiles.length === 1 && kisanPanjikaranFiles[0].isPDF) {
+                                                    openPdfFile(kisanPanjikaranFiles[0].uri);
+                                                } else {
+                                                    setPreviewModal({
+                                                        visible: true,
+                                                        title: 'किसान पंजीकरण पर्ची',
+                                                        files: kisanPanjikaranFiles,
+                                                        index: 0,
+                                                        pickerKey: 'kisan_panjikaran',
+                                                    });
+                                                }
+                                            }}
+                                            error={errors.kisanPanjikaranPhoto}
+                                            isPDF={kisanPanjikaranFiles.length > 0 && kisanPanjikaranFiles[0].isPDF}
+                                            onClear={() => setKisanPanjikaranFiles([])}
+                                        />
                                     </View>
 
                                     {!isTabletMode && (
@@ -1031,10 +1563,115 @@ export default function FarmerRegistrationScreen({
 
             <ImageSourceSelector
                 visible={!!pickerType}
-                showPDF={pickerType === 'aadhaar' || pickerType === 'khatauni'}
+                showPDF={pickerType === 'aadhaar' || pickerType === 'khatauni' || pickerType === 'kisan_panjikaran'}
                 onSelect={handleImageSelect}
                 onClose={() => setPickerType(null)}
             />
+
+            <LocalDocumentViewerModal
+                visible={previewModal.visible}
+                title={previewModal.title}
+                files={previewModal.files}
+                initialIndex={previewModal.index}
+                onClose={() => setPreviewModal(prev => ({ ...prev, visible: false }))}
+                onReplace={previewModal.pickerKey ? () => setPickerType(previewModal.pickerKey!) : undefined}
+            />
+
+            {/* Registration OTP Modal */}
+            <Modal
+                visible={showOtpModal}
+                transparent
+                animationType="fade"
+                onRequestClose={() => {
+                    if (!otpSubmitting) setShowOtpModal(false);
+                }}
+            >
+                <KeyboardAvoidingView
+                    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                    style={styles.otpModalOverlay}
+                >
+                    <View style={styles.otpModalContainer}>
+                        <View style={styles.otpHeaderRow}>
+                            <View style={styles.otpIconBadge}>
+                                <MaterialCommunityIcons name="shield-check" size={28} color={MUSTARD_DARK} />
+                            </View>
+                            <TouchableOpacity
+                                onPress={() => {
+                                    if (!otpSubmitting) setShowOtpModal(false);
+                                }}
+                                style={styles.otpCloseBtn}
+                                disabled={otpSubmitting}
+                            >
+                                <MaterialCommunityIcons name="close" size={22} color="#757575" />
+                            </TouchableOpacity>
+                        </View>
+
+                        <Text style={styles.otpTitle} maxFontSizeMultiplier={1.3}>मोबाइल नंबर सत्यापन</Text>
+                        <Text style={styles.otpSubtitle} maxFontSizeMultiplier={1.3}>
+                            पंजीकरण पूरा करने हेतु आपके मोबाइल नंबर <Text style={styles.otpMobileHighlight}>+91 {formData.mobile}</Text> पर 6-अंकों का OTP भेजा गया है।
+                        </Text>
+
+                        <View style={{ marginVertical: 12 }}>
+                            <OTPInput
+                                value={otp}
+                                onChange={(value) => {
+                                    setOtp(value);
+                                    if (otpError) setOtpError('');
+                                }}
+                                error={otpError}
+                            />
+                        </View>
+
+                        <View style={styles.otpTimerRow}>
+                            {resendTimer > 0 ? (
+                                <Text style={styles.otpTimerText} maxFontSizeMultiplier={1.3}>
+                                    पुनः OTP भेजें ({resendTimer}s)
+                                </Text>
+                            ) : (
+                                <TouchableOpacity
+                                    onPress={handleResendOtp}
+                                    disabled={otpSubmitting}
+                                    activeOpacity={0.7}
+                                >
+                                    <Text style={styles.otpResendBtnText} maxFontSizeMultiplier={1.3}>पुनः OTP भेजें</Text>
+                                </TouchableOpacity>
+                            )}
+                        </View>
+
+                        <View style={styles.otpActions}>
+                            <TouchableOpacity
+                                style={styles.otpCancelBtn}
+                                onPress={() => setShowOtpModal(false)}
+                                disabled={otpSubmitting}
+                                activeOpacity={0.7}
+                            >
+                                <Text style={styles.otpCancelBtnText} maxFontSizeMultiplier={1.3}>रद्द करें</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[styles.otpSubmitBtn, otpSubmitting && styles.buttonDisabled]}
+                                onPress={handleVerifyAndSubmit}
+                                disabled={otpSubmitting}
+                                activeOpacity={0.8}
+                            >
+                                {otpSubmitting ? (
+                                    <ActivityIndicator size="small" color="#FFF" />
+                                ) : (
+                                    <Text
+                                        style={styles.otpSubmitBtnText}
+                                        numberOfLines={1}
+                                        adjustsFontSizeToFit
+                                        minimumFontScale={0.8}
+                                        maxFontSizeMultiplier={1.3}
+                                    >
+                                        सत्यापित एवं जमा करें
+                                    </Text>
+                                )}
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </KeyboardAvoidingView>
+            </Modal>
 
             <ModernAlert
                 visible={alertConfig.visible}
@@ -1185,82 +1822,356 @@ const styles = StyleSheet.create({
     uploadCard: {
         backgroundColor: '#FFFFFF',
         borderRadius: 16,
-        padding: 4,
+        padding: 6,
         borderWidth: 1.5,
-        borderColor: '#EEEEEE',
+        borderColor: '#E2E8F0',
         shadowColor: '#000',
-        shadowOffset: { width: moderateScale(0), height: 2 },
+        shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.05,
         shadowRadius: 4,
         elevation: 2,
-        minHeight: isTablet ? 120 : 110,
-    },
-    uploadCardSelected: {
-        borderColor: '#4CAF50',
-        backgroundColor: '#F1F8E9',
-    },
-    uploadCardError: {
-        borderColor: '#FFCDD2',
-        backgroundColor: '#FFEBEE',
-    },
-    uploadCardInner: {
-        alignItems: 'center',
+        minHeight: 140,
         justifyContent: 'center',
     },
+    uploadCardSelected: {
+        borderColor: '#10B981',
+        backgroundColor: '#F0FDF4',
+    },
+    uploadCardError: {
+        borderColor: '#EF4444',
+        backgroundColor: '#FEF2F2',
+    },
+    emptyUploadBtn: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 14,
+    },
+    uploadedContainer: {
+        width: '100%',
+    },
+    previewImageContainer: {
+        width: '100%',
+        height: 90,
+        borderRadius: 10,
+        overflow: 'hidden',
+        backgroundColor: '#F1F5F9',
+        position: 'relative',
+    },
+    cardImagePreview: {
+        width: '100%',
+        height: '100%',
+    },
+    previewOverlayPill: {
+        position: 'absolute',
+        bottom: 5,
+        right: 5,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 3,
+        backgroundColor: 'rgba(0, 0, 0, 0.65)',
+        paddingHorizontal: 7,
+        paddingVertical: 2,
+        borderRadius: 10,
+    },
+    previewOverlayText: {
+        color: '#FFFFFF',
+        fontSize: 10,
+        fontWeight: '700',
+    },
+    pdfPreviewBox: {
+        width: '100%',
+        height: '100%',
+        backgroundColor: '#FEF2F2',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 4,
+    },
+    pdfFileName: {
+        fontSize: 10,
+        color: '#991B1B',
+        fontWeight: '700',
+        marginTop: 2,
+        maxWidth: '90%',
+    },
+    viewBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 3,
+        marginTop: 3,
+        backgroundColor: '#E0F2FE',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 8,
+    },
+    viewBadgeText: {
+        fontSize: 10,
+        color: '#0284C7',
+        fontWeight: '700',
+    },
+    multiFileBadge: {
+        position: 'absolute',
+        top: 5,
+        left: 5,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 3,
+        backgroundColor: '#0F766E',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 8,
+        elevation: 2,
+    },
+    multiFileBadgeText: {
+        color: '#FFFFFF',
+        fontSize: 10,
+        fontWeight: '800',
+    },
+    checkBadge: {
+        position: 'absolute',
+        top: 5,
+        right: 5,
+        width: 18,
+        height: 18,
+        borderRadius: 9,
+        backgroundColor: '#10B981',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1.5,
+        borderColor: '#FFFFFF',
+        elevation: 2,
+    },
+    cardInfoRow: {
+        alignItems: 'center',
+        marginTop: 5,
+        marginBottom: 3,
+    },
+    cardActionRow: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: 5,
+        paddingTop: 2,
+    },
+    actionBtnSmall: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 3,
+        paddingHorizontal: 7,
+        paddingVertical: 3,
+        borderRadius: 6,
+        backgroundColor: '#FFFFFF',
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
+    },
+    actionBtnSmallDanger: {
+        paddingHorizontal: 6,
+        paddingVertical: 3,
+        borderRadius: 6,
+        backgroundColor: '#FEF2F2',
+        borderWidth: 1,
+        borderColor: '#FECACA',
+    },
+    actionBtnText: {
+        fontSize: 10,
+        fontWeight: '700',
+    },
+    uploadCtaPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 2,
+        marginTop: 4,
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        backgroundColor: '#FEF3C7',
+        borderRadius: 10,
+    },
+    uploadCtaText: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: MUSTARD_DARK,
+    },
     uploadCardIconBG: {
-        width: moderateScale(46),
-        height: verticalScale(46),
+        width: 44,
+        height: 44,
         borderRadius: 12,
         backgroundColor: '#FFF8E1',
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: 6,
     },
-    uploadCardIconBGSelected: {
-        backgroundColor: '#E8F5E9',
-    },
-    uploadCardContent: {
-        alignItems: 'center',
-    },
     uploadCardLabel: {
-        fontSize: moderateScale(14),
-        fontWeight: '700',
-        color: '#212121',
-        marginBottom: 1,
+        fontSize: 13,
+        fontWeight: '800',
+        color: '#1E293B',
     },
-    uploadCardStatus: {
-        fontSize: moderateScale(11),
-        color: '#757575',
-        fontWeight: '500',
+    // Viewer Modal Styles
+    viewerOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(15, 23, 42, 0.96)',
+        justifyContent: 'space-between',
     },
-    uploadCardStatusSelected: {
-        color: '#4CAF50',
-        fontWeight: 'bold',
+    viewerHeaderSafeArea: {
+        backgroundColor: 'transparent',
+        paddingTop: Platform.OS === 'ios' ? 44 : 20,
     },
-    uploadCardFullPreview: {
-        width: moderateScale(46),
-        height: verticalScale(46),
-        borderRadius: 12,
-        marginBottom: 6,
-        backgroundColor: '#FAFAFA',
-    },
-    checkmarkBadge: {
-        position: 'absolute',
-        top: -6,
-        right: -6,
-        width: moderateScale(22),
-        height: verticalScale(22),
-        borderRadius: 11,
-        backgroundColor: '#4CAF50',
-        justifyContent: 'center',
+    viewerHeader: {
+        flexDirection: 'row',
         alignItems: 'center',
-        borderWidth: 2,
-        borderColor: '#FFF',
-        elevation: 3,
-        shadowColor: '#000',
-        shadowOffset: { width: moderateScale(0), height: 1 },
-        shadowOpacity: 0.2,
-        shadowRadius: 2,
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(255,255,255,0.1)',
+    },
+    viewerTitle: {
+        fontSize: 17,
+        fontWeight: '800',
+        color: '#FFFFFF',
+    },
+    viewerSubtitle: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#94A3B8',
+        marginTop: 2,
+    },
+    viewerCloseBtn: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: 'rgba(255,255,255,0.15)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    viewerBody: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 12,
+    },
+    viewerImage: {
+        width: SCREEN_WIDTH - 24,
+        height: SCREEN_HEIGHT * 0.65,
+    },
+    viewerPdfCard: {
+        backgroundColor: '#FFFFFF',
+        borderRadius: 20,
+        padding: 24,
+        alignItems: 'center',
+        maxWidth: 320,
+        width: '90%',
+    },
+    viewerPdfTitle: {
+        fontSize: 16,
+        fontWeight: '800',
+        color: '#1E293B',
+        marginTop: 12,
+        textAlign: 'center',
+    },
+    viewerPdfDesc: {
+        fontSize: 13,
+        color: '#64748B',
+        textAlign: 'center',
+        marginTop: 8,
+        lineHeight: 19,
+    },
+    openPdfPrimaryBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        backgroundColor: '#DC2626',
+        paddingVertical: 12,
+        paddingHorizontal: 20,
+        borderRadius: 12,
+        marginTop: 16,
+        width: '100%',
+    },
+    openPdfPrimaryBtnText: {
+        color: '#FFFFFF',
+        fontSize: 14,
+        fontWeight: '800',
+    },
+    viewerFooterSafeArea: {
+        backgroundColor: 'transparent',
+        paddingBottom: Platform.OS === 'ios' ? 24 : 10,
+    },
+    viewerFooter: {
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(255,255,255,0.1)',
+    },
+    paginationRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 12,
+    },
+    pageNavBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 20,
+        backgroundColor: 'rgba(255,255,255,0.15)',
+        gap: 4,
+    },
+    pageNavBtnDisabled: {
+        opacity: 0.4,
+    },
+    pageNavText: {
+        color: '#FFFFFF',
+        fontSize: 13,
+        fontWeight: '700',
+    },
+    dotsContainer: {
+        flexDirection: 'row',
+        gap: 6,
+        alignItems: 'center',
+    },
+    dot: {
+        width: 7,
+        height: 7,
+        borderRadius: 4,
+        backgroundColor: 'rgba(255,255,255,0.3)',
+    },
+    activeDot: {
+        width: 18,
+        height: 7,
+        borderRadius: 4,
+        backgroundColor: '#10B981',
+    },
+    viewerActionRow: {
+        flexDirection: 'row',
+        gap: 10,
+    },
+    viewerSecondaryBtn: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        paddingVertical: 12,
+        borderRadius: 12,
+        backgroundColor: 'rgba(255,255,255,0.15)',
+    },
+    viewerSecondaryBtnText: {
+        color: '#FFFFFF',
+        fontSize: 14,
+        fontWeight: '700',
+    },
+    viewerPrimaryBtn: {
+        flex: 1,
+        paddingVertical: 12,
+        borderRadius: 12,
+        backgroundColor: MUSTARD,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    viewerPrimaryBtnText: {
+        color: '#000000',
+        fontSize: 14,
+        fontWeight: '800',
     },
     whatsappRow: {
         flexDirection: 'row',
@@ -1390,5 +2301,110 @@ const styles = StyleSheet.create({
         fontSize: moderateScale(14),
         fontWeight: '600',
         color: '#424242',
+    },
+    otpModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.65)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 16,
+    },
+    otpModalContainer: {
+        backgroundColor: '#FFF',
+        borderRadius: 24,
+        padding: SPACING.md,
+        width: '92%',
+        maxWidth: 380,
+        elevation: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.25,
+        shadowRadius: 10,
+    },
+    otpHeaderRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 10,
+    },
+    otpIconBadge: {
+        width: moderateScale(42),
+        height: verticalScale(42),
+        borderRadius: 21,
+        backgroundColor: '#FFF8E1',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    otpCloseBtn: {
+        padding: 6,
+    },
+    otpTitle: {
+        fontSize: moderateScale(18),
+        fontWeight: '800',
+        color: '#212121',
+        marginBottom: 6,
+    },
+    otpSubtitle: {
+        fontSize: moderateScale(13),
+        color: '#616161',
+        lineHeight: moderateScale(19),
+    },
+    otpMobileHighlight: {
+        fontWeight: '700',
+        color: '#212121',
+    },
+    otpTimerRow: {
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    otpTimerText: {
+        fontSize: moderateScale(13),
+        color: '#9E9E9E',
+        fontWeight: '600',
+    },
+    otpResendBtnText: {
+        fontSize: moderateScale(13),
+        color: MUSTARD_DARK,
+        fontWeight: '700',
+    },
+    otpActions: {
+        flexDirection: 'row',
+        gap: 8,
+        alignItems: 'center',
+    },
+    otpCancelBtn: {
+        flex: 1,
+        minHeight: verticalScale(46),
+        paddingHorizontal: 8,
+        borderRadius: 14,
+        borderWidth: 1.5,
+        borderColor: '#E0E0E0',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    otpCancelBtnText: {
+        fontSize: moderateScale(13.5),
+        fontWeight: '700',
+        color: '#616161',
+    },
+    otpSubmitBtn: {
+        flex: 2,
+        minHeight: verticalScale(46),
+        paddingHorizontal: 8,
+        borderRadius: 14,
+        backgroundColor: MUSTARD_DARK,
+        justifyContent: 'center',
+        alignItems: 'center',
+        elevation: 3,
+        shadowColor: MUSTARD,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4,
+    },
+    otpSubmitBtnText: {
+        fontSize: moderateScale(13.5),
+        fontWeight: '800',
+        color: '#FFF',
+        textAlign: 'center',
     },
 });

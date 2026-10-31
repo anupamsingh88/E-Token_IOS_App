@@ -37,6 +37,7 @@ if ($tableCheck->num_rows === 0) {
 
 
 $category = isset($_GET['category']) ? $_GET['category'] : null;
+$app = isset($_GET['app']) ? strtolower(trim($_GET['app'])) : null;
 
 try {
     $query = "SELECT * FROM app_content WHERE is_active = 1";
@@ -46,7 +47,13 @@ try {
     if ($category) {
         $query .= " AND category = ?";
         $params[] = $category;
-        $types = "s";
+        $types .= "s";
+    }
+
+    if ($app === 'farmer' || $app === 'urvarak_setu') {
+        $query .= " AND content_key NOT LIKE 'retailer_%'";
+    } elseif ($app === 'retailer' || $app === 'upcdc') {
+        $query .= " AND content_key NOT LIKE 'farmer_%'";
     }
 
     $query .= " ORDER BY display_order ASC, id ASC";

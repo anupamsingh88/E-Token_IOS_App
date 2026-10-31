@@ -24,6 +24,7 @@ try {
     }
 
 } catch (PDOException $e) {
-    echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+    error_log("approve_farmer error: " . $e->getMessage());
+    echo json_encode(['success' => false, 'message' => 'स्वीकृति प्रक्रिया में तकनीकी समस्या आई।']);
 }
 ?>

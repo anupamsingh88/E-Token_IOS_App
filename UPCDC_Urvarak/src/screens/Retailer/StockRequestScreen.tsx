@@ -1,14 +1,13 @@
 import { apiFetch } from '../../utils/apiClient';
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Alert, LayoutAnimation, Platform, UIManager, Animated, Easing, Dimensions, TextInput, PanResponder, RefreshControl, BackHandler } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SHADOWS, SPACING } from '../../constants';
-import { API_ENDPOINTS } from '../../config/config';
-import ParticleBackground from '../../components/ParticleBackground';
+import { API_BASE_URL, API_ENDPOINTS } from '../../config/config';
 import AlertModal from '../../components/AlertModal';
 import ConfirmModal from '../../components/ConfirmModal';
-import TopHeader from '../../components/TopHeader';
+import { useRetailerData } from '../../contexts/RetailerDataContext';
 const { width } = Dimensions.get('window');
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -19,8 +18,9 @@ interface FertilizerItem {
     id: string;
     name: string;
     nameHindi: string;
-    type: 'urea' | 'dap' | 'npk' | 'mop';
+    type: string;
     price: number;
+    imageUrl?: string | null;
 }
 
 interface RequestDetail {
@@ -36,26 +36,89 @@ interface StockRequestScreenProps {
     retailerName?: string;
 }
 
-const SELECTION_ASSETS = {
+const SELECTION_ASSETS: Record<string, any> = {
     urea: require('../../../assets/urea_bori.png'),
     dap: require('../../../assets/dap_bori.png'),
     npk: require('../../../assets/npk_bori.png'),
     mop: require('../../../assets/mop_bori.png'),
+    tsp: require('../../../assets/tsp_bori.png'),
 };
 
-const DETAIL_ASSETS = {
-    urea: require('../../../assets/bori_urea.jpeg'),
-    dap: require('../../../assets/bori_DAP.jpeg'),
-    npk: require('../../../assets/bori_NPK.jpeg'),
-    mop: require('../../../assets/bori_MOP.jpeg'),
+const DETAIL_ASSETS: Record<string, any> = {
+    urea: require('../../../assets/urea_bori.png'),
+    dap: require('../../../assets/dap_bori.png'),
+    npk: require('../../../assets/npk_bori.png'),
+    mop: require('../../../assets/mop_bori.png'),
+    tsp: require('../../../assets/tsp_bori.png'),
+};
+
+const resolveFertilizerImage = (imageUrl?: string | null, type?: string, isDetail = false) => {
+    const typeKey = (type || '').toLowerCase();
+    if (imageUrl && typeof imageUrl === 'string') {
+        const trimmed = imageUrl.trim();
+        if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+            return { uri: trimmed, cache: 'force-cache' as const };
+        }
+        const cleanPath = trimmed.replace(/^[\\\/]+/, '').replace(/\\/g, '/');
+        if (cleanPath.length > 0) {
+            return { uri: `${API_BASE_URL}/${cleanPath}`, cache: 'force-cache' as const };
+        }
+    }
+    const assetsMap = isDetail ? DETAIL_ASSETS : SELECTION_ASSETS;
+    return assetsMap[typeKey] || (isDetail ? DETAIL_ASSETS['npk'] : SELECTION_ASSETS['npk']);
 };
 
 const DEFAULT_ITEMS: FertilizerItem[] = [
-    { id: '1', name: 'Urea', nameHindi: 'यूरिया', type: 'urea', price: 0 },
-    { id: '2', name: 'DAP', nameHindi: 'डीएपी', type: 'dap', price: 0 },
-    { id: '3', name: 'NPK', nameHindi: 'एनपीके', type: 'npk', price: 0 },
-    { id: '4', name: 'MOP', nameHindi: 'एमओपी', type: 'mop', price: 0 },
+    { id: 'urea', name: 'Urea', nameHindi: 'यूरिया', type: 'urea', price: 266.5, imageUrl: 'assets/upcdc/urea_bori.png' },
+    { id: 'dap', name: 'DAP', nameHindi: 'डीएपी', type: 'dap', price: 1350, imageUrl: 'assets/upcdc/dap_bori.png' },
+    { id: 'npk', name: 'NPK', nameHindi: 'एनपीके', type: 'npk', price: 1900, imageUrl: 'assets/upcdc/npk_bori.png' },
+    { id: 'mop', name: 'MOP', nameHindi: 'एमओपी', type: 'mop', price: 1800, imageUrl: 'assets/upcdc/mop_bori.png' },
+    { id: 'tsp', name: 'TSP', nameHindi: 'टीएसपी', type: 'tsp', price: 1300, imageUrl: 'assets/upcdc/tsp_bori.png' },
 ];
+
+const DAILY_REQUESTS_CACHE_KEY = (id: string) => `@Urvarak_Daily_Requests_${id}`;
+const GLOBAL_PRODUCTS_CACHE_KEY = '@Urvarak_Global_Products_Cache';
+
+// Module-level RAM cache preserved across screen transitions
+let memoryProductsCache: FertilizerItem[] | null = null;
+let lastProductsFetchTime = 0;
+
+const areItemsEqual = (a: FertilizerItem[], b: FertilizerItem[]): boolean => {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+        if (
+            a[i].id !== b[i].id ||
+            a[i].type !== b[i].type ||
+            a[i].price !== b[i].price ||
+            a[i].name !== b[i].name ||
+            a[i].nameHindi !== b[i].nameHindi ||
+            a[i].imageUrl !== b[i].imageUrl
+        ) {
+            return false;
+        }
+    }
+    return true;
+};
+
+const areRequestsEqual = (a: Record<string, RequestDetail>, b: Record<string, RequestDetail>): boolean => {
+    const aKeys = Object.keys(a);
+    const bKeys = Object.keys(b);
+    if (aKeys.length !== bKeys.length) return false;
+    for (const key of aKeys) {
+        const itemA = a[key];
+        const itemB = b[key];
+        if (!itemB) return false;
+        if (
+            itemA.quantity !== itemB.quantity ||
+            itemA.status !== itemB.status ||
+            itemA.time !== itemB.time ||
+            itemA.comment !== itemB.comment
+        ) {
+            return false;
+        }
+    }
+    return true;
+};
 
 const STATUS_LABELS = {
     pending: 'लंबित',
@@ -70,7 +133,31 @@ const STATUS_COLORS = {
 };
 
 export default function StockRequestScreen({ onBack, retailerId, retailerName }: StockRequestScreenProps) {
-    const [items, setItems] = useState<FertilizerItem[]>(DEFAULT_ITEMS);
+    const { counts } = useRetailerData();
+
+    // Instant SWR: Seed items immediately from in-memory context (0ms delay)
+    const initialItems = useMemo<FertilizerItem[]>(() => {
+        // 1. Highest priority: Persistent in-memory cache (keeps all added cards and prices frozen across screen opens)
+        if (memoryProductsCache && memoryProductsCache.length > 0) {
+            return memoryProductsCache;
+        }
+        // 2. Next: Retailer context cache
+        if (counts?.stock_items && counts.stock_items.length > 0) {
+            const mapped = counts.stock_items.map((s) => ({
+                id: String(s.id || s.type).toLowerCase(),
+                name: s.name,
+                nameHindi: s.nameHindi || s.name,
+                type: String(s.type || s.id).toLowerCase(),
+                price: parseFloat((s.price as any) || 0),
+                imageUrl: s.imageUrl || null,
+            }));
+            memoryProductsCache = mapped;
+            return mapped;
+        }
+        return DEFAULT_ITEMS;
+    }, [counts?.stock_items]);
+
+    const [items, setItems] = useState<FertilizerItem[]>(initialItems);
     const [activeTab, setActiveTab] = useState<'request' | 'history'>('request');
     const [selectedItem, setSelectedItem] = useState<FertilizerItem | null>(null);
     const [quantity, setQuantity] = useState('');
@@ -98,11 +185,67 @@ export default function StockRequestScreen({ onBack, retailerId, retailerName }:
         dap: { quantity: 0, status: null, comment: null, time: null },
         npk: { quantity: 0, status: null, comment: null, time: null },
         mop: { quantity: 0, status: null, comment: null, time: null },
+        tsp: { quantity: 0, status: null, comment: null, time: null },
     });
 
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const translateYAnim = useRef(new Animated.Value(30)).current;
     const scaleAnim = useRef(new Animated.Value(0.9)).current;
+
+    // Load persisted global products from disk on cold start
+    useEffect(() => {
+        if (!memoryProductsCache) {
+            AsyncStorage.getItem(GLOBAL_PRODUCTS_CACHE_KEY).then((cached) => {
+                if (cached) {
+                    try {
+                        const parsed = JSON.parse(cached);
+                        if (Array.isArray(parsed) && parsed.length > 0) {
+                            memoryProductsCache = parsed;
+                            setItems((prev) => areItemsEqual(prev, parsed) ? prev : parsed);
+                        }
+                    } catch (e) {}
+                }
+            }).catch(() => {});
+        }
+    }, []);
+
+    // Sync items if context stock_items updates (Zero-Flicker guard)
+    useEffect(() => {
+        if (counts?.stock_items && counts.stock_items.length > 0) {
+            const mapped = counts.stock_items.map((s) => ({
+                id: String(s.id || s.type).toLowerCase(),
+                name: s.name,
+                nameHindi: s.nameHindi || s.name,
+                type: String(s.type || s.id).toLowerCase(),
+                price: parseFloat((s.price as any) || 0),
+                imageUrl: s.imageUrl || null,
+            }));
+            setItems((prev) => {
+                if (areItemsEqual(prev, mapped)) return prev;
+                memoryProductsCache = mapped;
+                return mapped;
+            });
+        }
+    }, [counts?.stock_items]);
+
+    // Instant local cache hydration for daily requests (Zero-Flicker guard)
+    useEffect(() => {
+        if (!retailerId) return;
+        AsyncStorage.getItem(DAILY_REQUESTS_CACHE_KEY(retailerId)).then((cached) => {
+            if (cached) {
+                try {
+                    const parsed = JSON.parse(cached);
+                    if (parsed && typeof parsed === 'object') {
+                        setDailyRequests((prev) => areRequestsEqual(prev, parsed) ? prev : { ...prev, ...parsed });
+                    }
+                } catch (e) {
+                    console.error('Error parsing cached daily requests:', e);
+                }
+            }
+        }).catch((e) => {
+            console.error('Error reading cached daily requests:', e);
+        });
+    }, [retailerId]);
 
     useEffect(() => {
         const backAction = () => {
@@ -128,32 +271,64 @@ export default function StockRequestScreen({ onBack, retailerId, retailerName }:
 
     const fetchData = useCallback(async (isRefresh = false, isSilent = false, activeFlag = { active: true }) => {
         try {
-            if (!isSilent) {
-                if (isRefresh) setRefreshing(true);
-                else setLoading(true);
+            if (!isSilent && isRefresh) {
+                setRefreshing(true);
             }
 
-            // Fetch Prices
-            const settingsRes = await apiFetch(API_ENDPOINTS.getSettings);
-            if (!activeFlag.active) return;
-            const settingsResult = await settingsRes.json();
-            if (!activeFlag.active) return;
-            const prices = settingsResult.data || {};
+            const now = Date.now();
+            // Throttle prices fetch to 30 seconds unless user explicitly pulled to refresh
+            const shouldFetchPrices = isRefresh || (now - lastProductsFetchTime > 30000) || !memoryProductsCache;
 
-            const updatedItems = DEFAULT_ITEMS.map(item => ({
-                ...item,
-                price: prices[`${item.type}_price`] || 0,
-            }));
-            if (!activeFlag.active) return;
-            setItems(updatedItems);
+            const prodPromise = shouldFetchPrices
+                ? apiFetch(`${API_ENDPOINTS.getFertilizerPrices}${isRefresh ? '?force=1' : ''}`)
+                    .then(r => r.json())
+                    .catch(err => {
+                        console.error('Failed to fetch fertilizer prices:', err);
+                        return null;
+                    })
+                : Promise.resolve(null);
 
-            // Fetch Today's Requests
-            const requestsRes = await apiFetch(`${API_ENDPOINTS.getDailyRequests}?retailer_id=${retailerId}`);
+            const requestsPromise = apiFetch(`${API_ENDPOINTS.getDailyRequests}?retailer_id=${retailerId}`)
+                .then(r => r.json())
+                .catch(err => {
+                    console.error('Failed to fetch daily requests:', err);
+                    return null;
+                });
+
+            // Parallelized network execution
+            const [prodResult, requestsResult] = await Promise.all([prodPromise, requestsPromise]);
             if (!activeFlag.active) return;
-            const requestsResult = await requestsRes.json();
-            if (!activeFlag.active) return;
-            if (requestsResult.success) {
-                setDailyRequests(requestsResult.data);
+
+            if (prodResult && prodResult.success && Array.isArray(prodResult.prices) && prodResult.prices.length > 0) {
+                lastProductsFetchTime = Date.now();
+                const fetchedItems: FertilizerItem[] = prodResult.prices.map((p: any) => ({
+                    id: String(p.id || p.type).toLowerCase(),
+                    name: p.name,
+                    nameHindi: p.nameHindi || p.name,
+                    type: String(p.type || p.id).toLowerCase(),
+                    price: parseFloat(p.price || p.pricePerBag || 0),
+                    imageUrl: p.imageUrl || null,
+                }));
+
+                // ZERO-FLICKER GUARD: If identical, return prev to completely skip React re-renders!
+                setItems((prev) => {
+                    if (areItemsEqual(prev, fetchedItems)) {
+                        return prev;
+                    }
+                    memoryProductsCache = fetchedItems;
+                    AsyncStorage.setItem(GLOBAL_PRODUCTS_CACHE_KEY, JSON.stringify(fetchedItems)).catch(() => {});
+                    return fetchedItems;
+                });
+            }
+
+            if (requestsResult && requestsResult.success && requestsResult.data) {
+                setDailyRequests((prev) => {
+                    if (areRequestsEqual(prev, requestsResult.data)) {
+                        return prev;
+                    }
+                    AsyncStorage.setItem(DAILY_REQUESTS_CACHE_KEY(retailerId), JSON.stringify(requestsResult.data)).catch(() => {});
+                    return requestsResult.data;
+                });
             }
 
         } catch (error) {
@@ -170,7 +345,7 @@ export default function StockRequestScreen({ onBack, retailerId, retailerName }:
         let active = true;
         const activeFlag = { active };
 
-        fetchData(false, false, activeFlag);
+        fetchData(false, true, activeFlag);
         const interval = setInterval(() => {
             fetchData(true, true, activeFlag);
         }, 120000); // Silent background refresh
@@ -273,7 +448,7 @@ export default function StockRequestScreen({ onBack, retailerId, retailerName }:
             </View>
             <View style={styles.itemGrid}>
                 {items.map((item) => {
-                    const req = dailyRequests[item.type];
+                    const req = dailyRequests[item.type] || { quantity: 0, status: null, comment: null, time: null };
                     return (
                         <TouchableOpacity
                             key={item.id}
@@ -282,7 +457,7 @@ export default function StockRequestScreen({ onBack, retailerId, retailerName }:
                             activeOpacity={0.8}
                         >
                             <View style={styles.imageContainer}>
-                                <Image source={SELECTION_ASSETS[item.type]} style={styles.gridImage} resizeMode="cover" />
+                                <Image source={resolveFertilizerImage(item.imageUrl, item.type, false)} style={styles.gridImage} resizeMode="cover" />
                             </View>
                             <View style={styles.cardInfoContainer}>
                                 <View style={styles.cardNameRow}>
@@ -311,9 +486,10 @@ export default function StockRequestScreen({ onBack, retailerId, retailerName }:
         </View>
     );
 
+    const currentSelectedItemReq = selectedItem ? (dailyRequests[selectedItem.type] || { quantity: 0, status: null, comment: null, time: null }) : null;
+
     return (
-        <ParticleBackground>
-            <SafeAreaView style={styles.container} edges={['bottom']}>
+        <View style={styles.container}>
                 <View style={styles.headerGlass}>
                     <TouchableOpacity onPress={selectedItem ? () => setSelectedItem(null) : onBack} style={styles.backButton}>
                         <Ionicons name="chevron-back" size={28} color="#1E293B" />
@@ -331,18 +507,18 @@ export default function StockRequestScreen({ onBack, retailerId, retailerName }:
                             <View style={styles.premiumProductCard}>
                                 <View style={styles.productCardContent}>
                                     <View style={styles.productImageWrapper}>
-                                        <Image source={DETAIL_ASSETS[selectedItem.type]} style={styles.detailBoriImage} resizeMode="contain" />
+                                        <Image source={resolveFertilizerImage(selectedItem.imageUrl, selectedItem.type, true)} style={styles.detailBoriImage} resizeMode="contain" />
                                     </View>
                                     <View style={styles.productDetailsSide}>
                                         <View style={styles.productTitleRow}>
                                             <Text style={styles.detailTitleMain}>{selectedItem.nameHindi}</Text>
-                                            {renderStatusBadge(dailyRequests[selectedItem.type].status)}
+                                            {renderStatusBadge(currentSelectedItemReq?.status ?? null)}
                                         </View>
                                         <Text style={styles.detailPriceMain}>₹{selectedItem.price} / बोरी</Text>
-                                        {dailyRequests[selectedItem.type].comment && (
+                                        {currentSelectedItemReq?.comment && (
                                             <View style={styles.commentBox}>
                                                 <Text style={styles.commentTitle}>AR की टिप्पणी:</Text>
-                                                <Text style={styles.commentText}>{dailyRequests[selectedItem.type].comment}</Text>
+                                                <Text style={styles.commentText}>{currentSelectedItemReq.comment}</Text>
                                             </View>
                                         )}
                                     </View>
@@ -352,11 +528,11 @@ export default function StockRequestScreen({ onBack, retailerId, retailerName }:
                             <View style={styles.solidFormCard}>
                                 <View style={styles.formSectionHeader}>
                                     <Text style={styles.formSectionTitle}>
-                                        {dailyRequests[selectedItem.type].status === 'pending' ? 'अनुरोध अपडेट करें' : 'आवश्यक मात्रा दर्ज करें'}
+                                        {currentSelectedItemReq?.status === 'pending' ? 'अनुरोध अपडेट करें' : 'आवश्यक मात्रा दर्ज करें'}
                                     </Text>
                                 </View>
 
-                                {dailyRequests[selectedItem.type].status !== 'approved' ? (
+                                {currentSelectedItemReq?.status !== 'approved' ? (
                                     <>
                                         <View style={styles.stepperContainer}>
                                             <TouchableOpacity style={styles.stepBtn} onPress={() => adjustQuantity(-10)}>
@@ -392,7 +568,7 @@ export default function StockRequestScreen({ onBack, retailerId, retailerName }:
                                         <TouchableOpacity style={[styles.mainActionBtn, { backgroundColor: '#7C3AED' }]} onPress={handleSendRequest} disabled={loading}>
                                             <View style={styles.mainActionBtnContent}>
                                                 <Text style={styles.mainActionBtnText}>
-                                                    {dailyRequests[selectedItem.type].status === 'pending' ? 'अनुरोध अपडेट करें' : 'अनुरोध भेजें'}
+                                                    {currentSelectedItemReq?.status === 'pending' ? 'अनुरोध अपडेट करें' : 'अनुरोध भेजें'}
                                                 </Text>
                                                 <Ionicons name="send" size={20} color="#FFF" />
                                             </View>
@@ -401,9 +577,9 @@ export default function StockRequestScreen({ onBack, retailerId, retailerName }:
                                 ) : (
                                     <View style={styles.approvedBox}>
                                         <Ionicons name="checkmark-circle" size={48} color="#10B981" />
-                                        <Text style={styles.approvedText}>अनुरोध स्वीकृत ({dailyRequests[selectedItem.type].time})</Text>
+                                        <Text style={styles.approvedText}>अनुरोध स्वीकृत ({currentSelectedItemReq?.time})</Text>
                                         <Text style={styles.lockInfoText}>4 दिन बाद ही नया अनुरोध कर पाएंगे</Text>
-                                        <Text style={styles.approvedQty}>{dailyRequests[selectedItem.type].quantity} बोरी</Text>
+                                        <Text style={styles.approvedQty}>{currentSelectedItemReq?.quantity} बोरी</Text>
                                     </View>
                                 )}
                             </View>
@@ -417,13 +593,12 @@ export default function StockRequestScreen({ onBack, retailerId, retailerName }:
                     message={alertModal.message}
                     onClose={hideAlert}
                 />
-            </SafeAreaView>
-        </ParticleBackground>
-    );
+            </View>
+        );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1 },
+    container: { flex: 1, backgroundColor: 'transparent' },
     headerGlass: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -450,7 +625,7 @@ const styles = StyleSheet.create({
         color: '#1E293B',
         letterSpacing: -0.5,
     },
-    scrollContent: { paddingHorizontal: 20, paddingBottom: 40, paddingTop: 15 },
+    scrollContent: { paddingHorizontal: 20, paddingBottom: 85, paddingTop: 15 },
     selectorContainer: { marginTop: 5 },
     selectorHeader: { marginBottom: 20 },
     selectorTitle: { fontSize: 22, fontWeight: '900', color: '#1E293B', marginBottom: 4 },

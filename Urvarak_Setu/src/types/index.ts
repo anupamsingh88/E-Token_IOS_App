@@ -75,6 +75,9 @@ export interface Booking {
     status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
     tokenNumber: string;
     qrCode: string;
+    cancellation_reason?: string;
+    extension_reason?: string;
+    order_id?: string;
     createdAt: string;
     updatedAt: string;
 }

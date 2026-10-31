@@ -7,6 +7,7 @@ import {
     Modal,
     FlatList,
     Animated,
+    Keyboard,
 } from 'react-native';
 import { COLORS, SPACING, FONT_SIZES, FONT_WEIGHTS, BORDER_RADIUS, INPUT_HEIGHT, SHADOWS } from '../../constants';
 import { scale, verticalScale, moderateScale, isTablet } from '../../utils/responsive';
@@ -74,6 +75,7 @@ const Dropdown: React.FC<DropdownProps> = ({
 
     const handleOpen = () => {
         if (!disabled) {
+            Keyboard.dismiss();
             setVisible(true);
             setIsFocused(true);
         }

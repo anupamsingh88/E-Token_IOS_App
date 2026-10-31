@@ -23,7 +23,8 @@ try {
     // Get farmer details
     $stmt = $conn->prepare("
         SELECT f.farmer_id, f.name, f.mobile, f.aadhaar, f.khatauni_number, 
-               f.khasra_rukba, f.profile_photo, f.aadhaar_photo, f.selected_retailer_id, f.selected_retailer_name,
+               f.khasra_rukba, f.profile_photo, f.aadhaar_photo, f.khatauni_photo, f.kisan_panjikaran_photo, f.selected_retailer_id, f.selected_retailer_name,
+               f.registry_id, f.kisan_panjikaran_number,
                f.village_id as village_name, f.village_id as village_name_en,
                f.block_id as block_name, f.block_id as block_name_en,
                f.tehsil_id as tehsil_name, f.tehsil_id as tehsil_name_en,
@@ -49,6 +50,9 @@ try {
             'name' => $farmer['name'],
             'mobile' => $farmer['mobile'],
             'aadhaar' => $farmer['aadhaar'] ?? '',
+            'registry_id' => $farmer['registry_id'] ?? '',
+            'kisan_panjikaran_number' => $farmer['kisan_panjikaran_number'] ?? '',
+            'kisan_code' => $farmer['kisan_panjikaran_number'] ?? '',
             'village' => $farmer['village_name'] ?? '',
             'village_en' => $farmer['village_name_en'] ?? '',
             'block' => $farmer['block_name'] ?? '',
@@ -60,8 +64,11 @@ try {
             'khatauni_number' => $farmer['khatauni_number'] ?? '',
             'khasra_number' => $farmer['khatauni_number'] ?? '', // Keep for backward compatibility if needed, but let's be clean
             'land_area' => floatval($farmer['khasra_rukba']),
+            'khasra_rukba' => $farmer['khasra_rukba'] ?? '',
             'profile_photo' => $farmer['profile_photo'],
             'aadhaar_photo' => $farmer['aadhaar_photo'] ?? null,
+            'khatauni_photo' => $farmer['khatauni_photo'] ?? null,
+            'kisan_panjikaran_photo' => $farmer['kisan_panjikaran_photo'] ?? null,
             'selected_retailer_id' => $farmer['selected_retailer_id'] ?? null,
             'selected_retailer_name' => $farmer['selected_retailer_name'] ?? null
         ]

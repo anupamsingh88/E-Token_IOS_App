@@ -6,6 +6,7 @@ header('Content-Type: application/json');
 
 include 'db_connect.php';
 include 'retailer_sms_helper.php';
+require_once __DIR__ . '/firebase_helper.php';
 
 $data = json_decode(file_get_contents("php://input"), true);
 
@@ -53,10 +54,11 @@ if ($action === 'approve') {
     exit;
 }
 
-// Fetch farmer info for SMS before update
+// Fetch farmer info for SMS & FCM before update
 $farmer_name = "Farmer";
 $farmer_mobile = "";
-$info_query = "SELECT name, mobile FROM farmer_info WHERE farmer_id = ?";
+$farmer_fcm_token = "";
+$info_query = "SELECT name, mobile, fcm_token FROM farmer_info WHERE farmer_id = ?";
 $info_stmt = $conn->prepare($info_query);
 if ($info_stmt) {
     $info_stmt->bind_param("s", $request_id);
@@ -65,6 +67,7 @@ if ($info_stmt) {
     if ($row = $res->fetch_assoc()) {
         $farmer_name = $row['name'];
         $farmer_mobile = $row['mobile'];
+        $farmer_fcm_token = $row['fcm_token'] ?? '';
     }
     $info_stmt->close();
 }
@@ -84,11 +87,40 @@ if ($stmt) {
             // Check if it was already updated or if the IDs don't match
             echo json_encode(["status" => "error", "message" => "Update failed: No record found or already updated"]);
         } else {
-            // Send SMS
+            // 1. Send SMS
             if (!empty($farmer_mobile)) {
                 $msg = get_registration_message($action, $farmer_name);
                 send_notification_sms($farmer_mobile, $msg);
             }
+
+            // 2. Send FCM Push Notification with Reason
+            if (!empty($farmer_fcm_token)) {
+                try {
+                    if ($action === 'reject') {
+                        $fcm_title = "पंजीकरण अस्वीकृत ❌";
+                        $fcm_body = "आपका पंजीकरण आवेदन अस्वीकृत कर दिया गया है। कारण: " . ($rejection_reason ?: "दस्तावेज़ अपूर्ण");
+                        $fcm_payload = [
+                            'type' => 'registration_rejected',
+                            'farmer_id' => (string)$request_id,
+                            'status' => 'rejected',
+                            'reason' => (string)($rejection_reason ?: "")
+                        ];
+                        sendFirebaseNotification($farmer_fcm_token, $fcm_title, $fcm_body, $fcm_payload);
+                    } else if ($action === 'approve') {
+                        $fcm_title = "पंजीकरण स्वीकृत ✅";
+                        $fcm_body = "बधाई हो! आपका पंजीकरण सफलतापूर्वक स्वीकृत हो गया है। अब आप उर्वरक बुक कर सकते हैं।";
+                        $fcm_payload = [
+                            'type' => 'registration_approved',
+                            'farmer_id' => (string)$request_id,
+                            'status' => 'approved'
+                        ];
+                        sendFirebaseNotification($farmer_fcm_token, $fcm_title, $fcm_body, $fcm_payload);
+                    }
+                } catch (Exception $e) {
+                    error_log("FCM send error in retailer_manage_registration: " . $e->getMessage());
+                }
+            }
+
             echo json_encode(["status" => "success", "message" => "Registration $action successfully"]);
         }
     } else {

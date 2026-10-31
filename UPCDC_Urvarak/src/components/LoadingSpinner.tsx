@@ -1,6 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Image, Animated, Easing } from 'react-native';
 import { COLORS, FONT_SIZES, SPACING } from '../constants';
+import { useSettings } from '../contexts/SettingsContext';
+import { resolveAppImage } from '../utils/imageResolver';
 
 interface LoadingSpinnerProps {
     message?: string;
@@ -11,6 +13,9 @@ export default function LoadingSpinner({
     message,
     size = 'large', // Size prop kept for compatibility but icon size is fixed/responsive
 }: LoadingSpinnerProps) {
+    const { settings } = useSettings();
+    const defaultIcon = require('../../assets/icon.png');
+    const iconSource = resolveAppImage(settings?.retailer_app_icon_url || settings?.icon_url, defaultIcon);
     const fadeAnim = useRef(new Animated.Value(0.3)).current; // Initial opacity
 
     useEffect(() => {
@@ -39,7 +44,7 @@ export default function LoadingSpinner({
     return (
         <View style={styles.container}>
             <Animated.Image
-                source={require('../../assets/icon.png')}
+                source={iconSource}
                 style={[
                     styles.icon,
                     { opacity: fadeAnim }

@@ -25,16 +25,28 @@ interface DailyFertilizerUpdateModalProps {
     onComplete: () => void;
 }
 
+interface ProductItem {
+    type: string;
+    name: string;
+    nameHindi: string;
+}
+
+const DEFAULT_PRODUCTS: ProductItem[] = [
+    { type: 'urea', name: 'Urea', nameHindi: 'यूरिया' },
+    { type: 'dap', name: 'DAP', nameHindi: 'डीएपी' },
+    { type: 'npk', name: 'NPK', nameHindi: 'एनपीके' },
+    { type: 'mop', name: 'MOP', nameHindi: 'एमओपी' },
+    { type: 'tsp', name: 'TSP', nameHindi: 'टीएसपी' },
+];
+
 export default function DailyFertilizerUpdateModal({ visible, retailerId, onComplete }: DailyFertilizerUpdateModalProps) {
     const [loading, setLoading] = useState(false);
     const { height: windowHeight } = useWindowDimensions();
     const isSmallScreen = windowHeight < 800;
 
-    // Stock State
-    const [ureaStock, setUreaStock] = useState('');
-    const [dapStock, setDapStock] = useState('');
-    const [npkStock, setNpkStock] = useState('');
-    const [mopStock, setMopStock] = useState('');
+    // Dynamic Products & Stocks State
+    const [products, setProducts] = useState<ProductItem[]>(DEFAULT_PRODUCTS);
+    const [stocks, setStocks] = useState<Record<string, string>>({});
     const [alertModal, setAlertModal] = useState({
         visible: false,
         title: '',
@@ -52,13 +64,34 @@ export default function DailyFertilizerUpdateModal({ visible, retailerId, onComp
         setAlertModal(prev => ({ ...prev, visible: false }));
     };
 
+    useEffect(() => {
+        if (!visible) return;
+        const loadProducts = async () => {
+            try {
+                const res = await apiFetch(API_ENDPOINTS.getFertilizerPrices);
+                const data = await res.json();
+                if (data.success && Array.isArray(data.prices) && data.prices.length > 0) {
+                    const mapped: ProductItem[] = data.prices.map((p: any) => ({
+                        type: String(p.type || p.id).toLowerCase(),
+                        name: p.name,
+                        nameHindi: p.nameHindi || p.name
+                    }));
+                    setProducts(mapped);
+                }
+            } catch (e) {
+                console.error('Error fetching dynamic products for stock update:', e);
+            }
+        };
+        loadProducts();
+    }, [visible]);
+
     const handleSubmit = async () => {
-        const updates = [
-            { product_type: 'urea', quantity: parseInt(ureaStock) },
-            { product_type: 'dap', quantity: parseInt(dapStock) },
-            { product_type: 'npk', quantity: parseInt(npkStock) },
-            { product_type: 'mop', quantity: parseInt(mopStock) },
-        ].filter(u => !isNaN(u.quantity));
+        const updates = Object.keys(stocks)
+            .map(type => ({
+                product_type: type,
+                quantity: parseInt(stocks[type], 10)
+            }))
+            .filter(u => !isNaN(u.quantity) && u.quantity >= 0);
 
         if (updates.length === 0) {
             showAlert('info', 'सूचना', 'कृपया कम से कम एक खाद का स्टॉक दर्ज करें');
@@ -71,7 +104,7 @@ export default function DailyFertilizerUpdateModal({ visible, retailerId, onComp
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    retailer_id: retailerId, // Send directly as string
+                    retailer_id: retailerId,
                     updates: updates
                 })
             });
@@ -89,6 +122,8 @@ export default function DailyFertilizerUpdateModal({ visible, retailerId, onComp
             setLoading(false);
         }
     };
+
+    const hasAnyStock = Object.values(stocks).some(val => val !== undefined && val.trim().length > 0 && !isNaN(parseInt(val, 10)));
 
     return (
         <Modal visible={visible} transparent animationType="fade">
@@ -123,50 +158,19 @@ export default function DailyFertilizerUpdateModal({ visible, retailerId, onComp
                             <Text style={styles.stepSubtitle}>दुकान खोलते समय आपके पास मौजूद स्टॉक दर्ज करें</Text>
 
                             <View style={styles.grid}>
-                                <View style={styles.itemRow}>
-                                    <Text style={styles.itemLabel}>यूरिया (Urea)</Text>
-                                    <TextInput
-                                        style={styles.fullInput}
-                                        placeholder="Urea bags (e.g. 100)"
-                                        placeholderTextColor="#94A3B8"
-                                        keyboardType="numeric"
-                                        value={ureaStock}
-                                        onChangeText={setUreaStock}
-                                    />
-                                </View>
-                                <View style={styles.itemRow}>
-                                    <Text style={styles.itemLabel}>डीएपी (DAP)</Text>
-                                    <TextInput
-                                        style={styles.fullInput}
-                                        placeholder="DAP bags (e.g. 50)"
-                                        placeholderTextColor="#94A3B8"
-                                        keyboardType="numeric"
-                                        value={dapStock}
-                                        onChangeText={setDapStock}
-                                    />
-                                </View>
-                                <View style={styles.itemRow}>
-                                    <Text style={styles.itemLabel}>एनपीके (NPK)</Text>
-                                    <TextInput
-                                        style={styles.fullInput}
-                                        placeholder="NPK bags"
-                                        placeholderTextColor="#94A3B8"
-                                        keyboardType="numeric"
-                                        value={npkStock}
-                                        onChangeText={setNpkStock}
-                                    />
-                                </View>
-                                <View style={styles.itemRow}>
-                                    <Text style={styles.itemLabel}>एमओपी (MOP)</Text>
-                                    <TextInput
-                                        style={styles.fullInput}
-                                        placeholder="MOP bags"
-                                        placeholderTextColor="#94A3B8"
-                                        keyboardType="numeric"
-                                        value={mopStock}
-                                        onChangeText={setMopStock}
-                                    />
-                                </View>
+                                {products.map((prod) => (
+                                    <View key={prod.type} style={styles.itemRow}>
+                                        <Text style={styles.itemLabel}>{prod.nameHindi} ({prod.name})</Text>
+                                        <TextInput
+                                            style={styles.fullInput}
+                                            placeholder={`${prod.name} बोरी (e.g. 50)`}
+                                            placeholderTextColor="#94A3B8"
+                                            keyboardType="numeric"
+                                            value={stocks[prod.type] || ''}
+                                            onChangeText={(val) => setStocks(prev => ({ ...prev, [prod.type]: val }))}
+                                        />
+                                    </View>
+                                ))}
                             </View>
                         </View>
                     </ScrollView>
@@ -175,10 +179,10 @@ export default function DailyFertilizerUpdateModal({ visible, retailerId, onComp
                         <TouchableOpacity
                             style={[
                                 styles.submitBtn,
-                                (!ureaStock || !dapStock || !npkStock || !mopStock) && styles.disabledBtn
+                                (!hasAnyStock || loading) && styles.disabledBtn
                             ]}
                             onPress={handleSubmit}
-                            disabled={loading || !ureaStock || !dapStock || !npkStock || !mopStock}
+                            disabled={loading || !hasAnyStock}
                         >
                             {loading ? <ActivityIndicator color="#FFF" /> : (
                                 <>

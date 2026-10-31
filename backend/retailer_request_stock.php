@@ -31,9 +31,17 @@ try {
         throw new Exception("Missing or invalid parameters: retailer_id, product_type, quantity");
     }
 
-    $valid_products = ['urea', 'dap', 'npk', 'mop'];
-    if (!in_array(strtolower($product_type), $valid_products)) {
-        throw new Exception("Invalid product type: $product_type");
+    // Validate product against fertilizer_products table dynamically
+    $p_check_stmt = $conn->prepare("SELECT type_id FROM fertilizer_products WHERE LOWER(type_id) = ?");
+    $p_type_lower = strtolower($product_type);
+    $p_check_stmt->bind_param("s", $p_type_lower);
+    $p_check_stmt->execute();
+    if ($p_check_stmt->get_result()->num_rows === 0) {
+        // Fallback check in case fertilizer_products is not yet populated
+        $fallback_valid = ['urea', 'dap', 'npk', 'mop', 'tsp'];
+        if (!in_array($p_type_lower, $fallback_valid)) {
+            throw new Exception("Invalid product type: $product_type");
+        }
     }
 
     // Ensure retailer_stock_requests table exists

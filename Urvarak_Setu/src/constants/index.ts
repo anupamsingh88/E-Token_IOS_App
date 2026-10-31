@@ -81,15 +81,15 @@ export const SPACING = {
   xxl: moderateScale(48),
 };
 
-// Font Sizes
+// Font Sizes - Small Device First Approach (scales gently for all screen sizes)
 export const FONT_SIZES = {
-  xs: moderateScale(15),
-  sm: moderateScale(17),
-  md: moderateScale(19),
-  lg: moderateScale(22),
-  xl: moderateScale(26),
-  xxl: moderateScale(32),
-  xxxl: moderateScale(40),
+  xs: moderateScale(11),
+  sm: moderateScale(15),
+  md: moderateScale(18),
+  lg: moderateScale(20),
+  xl: moderateScale(22),
+  xxl: moderateScale(26),
+  xxxl: moderateScale(32),
 };
 
 // Font Weights

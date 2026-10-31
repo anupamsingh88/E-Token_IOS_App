@@ -1,21 +1,23 @@
 <?php
 header('Content-Type: application/json');
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Headers: Content-Type");
-header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
+header("Cache-Control: no-cache, no-store, must-revalidate");
+header("Pragma: no-cache");
+header("Expires: 0");
 
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit(0);
 }
 
 require_once 'db_connect.php';
+require_once 'auto_cancel_helper.php';
 
 // Get request data
 $data = json_decode(file_get_contents('php://input'), true);
-$farmer_id = isset($data['farmer_id']) ? trim($data['farmer_id']) : '';
-$season = isset($data['season']) ? $data['season'] : null;
+$farmer_id = isset($data['farmer_id']) ? trim($data['farmer_id']) : (isset($_REQUEST['farmer_id']) ? trim($_REQUEST['farmer_id']) : '');
+$season = isset($data['season']) ? $data['season'] : (isset($_REQUEST['season']) ? $_REQUEST['season'] : null);
 $current_year = date('Y');
 
 if (!$farmer_id) {
@@ -24,6 +26,9 @@ if (!$farmer_id) {
 }
 
 try {
+    // Auto-cancel any expired bookings for this farmer
+    autoCancelExpiredBookings($conn, null, $farmer_id);
+
     // Get current season if not provided
     if (!$season) {
         $stmt = $conn->prepare("SELECT setting_value FROM app_settings WHERE setting_key = 'current_season'");
@@ -39,6 +44,7 @@ try {
     // Get farmer's land area and pre-selected retailer
     $stmt = $conn->prepare("
         SELECT f.name, f.khasra_rukba, f.selected_retailer_id, f.selected_retailer_name,
+               f.registry_id, f.kisan_panjikaran_number,
                f.district_id, f.tehsil_id, f.block_id, f.village_id,
                r.name as r_name, r.shop_name as r_shop, r.address as r_address
         FROM farmer_info f
@@ -57,9 +63,15 @@ try {
     $farmer = $result->fetch_assoc();
     $land_area = floatval($farmer['khasra_rukba']);
 
-    // Get seasonal limits from fertilizer_limits table
-    $stmt = $conn->prepare("SELECT fertilizer_type, limit_per_hectare FROM fertilizer_limits WHERE season = ?");
-    $stmt->bind_param("s", $season);
+    // Get seasonal limits from fertilizer_limits table (State default first, district specific priority)
+    $farmer_district = $farmer['district_id'] ?? '0';
+    $stmt = $conn->prepare("
+        SELECT fertilizer_type, limit_per_hectare 
+        FROM fertilizer_limits 
+        WHERE season = ? AND is_active = 1
+        ORDER BY CASE WHEN district_id = ? THEN 2 WHEN district_id = '0' OR district_id = '' THEN 1 ELSE 0 END ASC, updated_at ASC
+    ");
+    $stmt->bind_param("ss", $season, $farmer_district);
     $stmt->execute();
     $limits_result = $stmt->get_result();
 
@@ -75,7 +87,7 @@ try {
 
     $fertilizers = [];
     // Fetch products dynamically
-    $prod_stmt = $conn->prepare("SELECT type_id, name, nameHindi, pricePerBag, imageUrl FROM fertilizer_products");
+    $prod_stmt = $conn->prepare("SELECT type_id, name, nameHindi, pricePerBag, imageUrl FROM fertilizer_products ORDER BY id ASC");
     $prod_stmt->execute();
     $prod_res = $prod_stmt->get_result();
     $fertilizer_types = [];
@@ -84,11 +96,21 @@ try {
     while($prod = $prod_res->fetch_assoc()) {
         $key = strtoupper($prod['type_id']);
         $fertilizer_types[] = $key;
+
+        $img = $prod['imageUrl'];
+        if (!empty($img)) {
+            $imagePathOnly = explode('?', $img)[0];
+            $localFile = __DIR__ . '/' . ltrim(str_replace('\\', '/', $imagePathOnly), '/');
+            if (file_exists($localFile)) {
+                $img = $imagePathOnly . '?v=' . filemtime($localFile);
+            }
+        }
+
         $fertilizer_names[$key] = [
             'name' => $prod['name'],
             'nameHindi' => $prod['nameHindi'],
             'type' => $prod['type_id'],
-            'imageUrl' => $prod['imageUrl']
+            'imageUrl' => $img
         ];
         $prices[strtolower($prod['type_id'])] = floatval($prod['pricePerBag']);
     }
@@ -96,7 +118,7 @@ try {
 
     foreach ($fertilizer_types as $f_type) {
         $limit_key = strtolower($f_type);
-        $limit_per_hectare = isset($limits[$limit_key]) ? $limits[$limit_key] : 0;
+        $limit_per_hectare = array_key_exists($limit_key, $limits) ? $limits[$limit_key] : 2.0;
 
         // Calculate total allowed bags
         // Formula: Land Area * Limit per Hectare
@@ -167,6 +189,9 @@ try {
             'season' => $season,
             'land_area' => $land_area,
             'farmer_name' => $farmer['name'],
+            'registry_id' => $farmer['registry_id'] ?? '',
+            'kisan_panjikaran_number' => $farmer['kisan_panjikaran_number'] ?? '',
+            'kisan_code' => $farmer['kisan_panjikaran_number'] ?? '',
             'district_id' => $farmer['district_id'],
             'tehsil_id' => $farmer['tehsil_id'],
             'block_id' => $farmer['block_id'],

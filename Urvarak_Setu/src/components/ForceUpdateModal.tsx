@@ -22,6 +22,7 @@ interface ForceUpdateModalProps {
     title?: string;
     message?: string;
     playStoreUrl?: string;
+    appStoreUrl?: string;
     isOptional?: boolean;
     onSkip?: () => void;
 }
@@ -31,11 +32,19 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({
     currentVersion,
     latestVersion,
     title = 'नया अपडेट उपलब्ध है',
-    message = 'उर्वरक सेतु ऐप का नया और बेहतर वर्ज़न उपलब्ध है। आगे जारी रखने के लिए कृपया अभी अपडेट करें।',
+    message,
     playStoreUrl = 'https://play.google.com/store/apps/details?id=com.weknowtech.urvaraksetu',
+    appStoreUrl,
     isOptional = false,
     onSkip,
 }) => {
+    const isIos = Platform.OS === 'ios';
+    const defaultMessage = isIos
+        ? 'उर्वरक सेतु ऐप का नया वर्ज़न उपलब्ध है। आगे जारी रखने के लिए कृपया अभी अपडेट करें।'
+        : 'उर्वरक सेतु ऐप का नया और बेहतर वर्ज़न उपलब्ध है। आगे जारी रखने के लिए कृपया अभी अपडेट करें।';
+
+    const displayMessage = message || defaultMessage;
+
     // Intercept hardware back press on Android so user cannot bypass if NOT optional
     useEffect(() => {
         if (!visible || isOptional) return;
@@ -49,13 +58,15 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({
     }, [visible, isOptional]);
 
     const handleUpdatePress = async () => {
-        const fallbackUrl = 'https://play.google.com/store/apps/details?id=com.weknowtech.urvaraksetu';
-        const marketUrl = Platform.OS === 'android'
-            ? 'market://details?id=com.weknowtech.urvaraksetu'
-            : playStoreUrl;
+        const fallbackUrl = isIos
+            ? (appStoreUrl || 'https://apps.apple.com')
+            : 'https://play.google.com/store/apps/details?id=com.weknowtech.urvaraksetu';
+
+        const targetUrl = isIos
+            ? (appStoreUrl || fallbackUrl)
+            : (playStoreUrl || 'market://details?id=com.weknowtech.urvaraksetu');
 
         try {
-            const targetUrl = playStoreUrl || marketUrl;
             const supported = await Linking.canOpenURL(targetUrl);
             if (supported) {
                 await Linking.openURL(targetUrl);
@@ -95,7 +106,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({
                     {/* App Branding */}
                     <Text style={styles.appName}>🌾 उर्वरक सेतु</Text>
                     <Text style={styles.title}>{title}</Text>
-                    <Text style={styles.message}>{message}</Text>
+                    <Text style={styles.message}>{displayMessage}</Text>
 
                     {/* Version Details */}
                     <View style={styles.versionContainer}>
@@ -134,8 +145,14 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({
                             end={{ x: 1, y: 0 }}
                             style={styles.gradientBtn}
                         >
-                            <MaterialCommunityIcons name="google-play" size={24} color="#FFFFFF" />
-                            <Text style={styles.updateButtonText}>अभी अपडेट करें</Text>
+                            <MaterialCommunityIcons
+                                name={isIos ? "apple" : "google-play"}
+                                size={24}
+                                color="#FFFFFF"
+                            />
+                            <Text style={styles.updateButtonText}>
+                                {isIos ? 'App Store से अपडेट करें' : 'अभी अपडेट करें'}
+                            </Text>
                         </LinearGradient>
                     </TouchableOpacity>
 

@@ -96,6 +96,21 @@ try {
         $settings['advisory_tips'] = $tips;
     }
 
+    // Retailer App (UPCDC) Specific Branding Defaults & Mapping
+    $settings['logo_url'] = !empty($settings['retailer_app_logo_url']) ? $settings['retailer_app_logo_url'] : ($settings['logo_url'] ?? 'assets/upcdc/icon.png');
+    $settings['icon_url'] = !empty($settings['retailer_app_icon_url']) ? $settings['retailer_app_icon_url'] : ($settings['icon_url'] ?? 'assets/upcdc/icon.png');
+    $settings['bg_image_url'] = !empty($settings['retailer_app_bg_image_url']) ? $settings['retailer_app_bg_image_url'] : 'assets/upcdc/retailer.png';
+
+    // Fetch active app_content for CMS content access
+    $contentRes = $conn->query("SELECT content_key, content_value FROM app_content WHERE is_active = 1");
+    $appContent = [];
+    if ($contentRes) {
+        while ($cRow = $contentRes->fetch_assoc()) {
+            $appContent[$cRow['content_key']] = $cRow['content_value'];
+        }
+    }
+    $settings['app_content'] = $appContent;
+
     echo json_encode([
         'success' => true,
         'data' => $settings,

@@ -25,3 +25,29 @@
 [2026-10-11 15:18:50] TO: 6868685949 | MSG: Namaste Anuapm, aapka SFMS registration safaltapurvak approve ho gaya hai. Ab aap khaad ki booking kar sakte hain.
 [2026-10-11 16:14:05] TO: 8765782107 | MSG: Namaste Anupam, aapki 1 Urea ki booking (Date: 2026-10-11) cancel kar di gayi hai.
 [2026-10-11 16:14:10] TO: 8765782107 | MSG: Namaste Anupam, aapki 1 Urea, 1 DAP ki booking ka samay badha diya gaya hai. Kripya app mein naya samay check karein.
+[2026-10-20 18:18:52] TO: 8765782107 | MSG: Namaste Anupam Singh, khed hai ki aapka SFMS registration aswikar (reject) kar diya gaya hai. Kripya nikatam Kendra se sampark karein.
+[2026-10-20 18:20:59] TO: 8765782107 | MSG: Namaste Anupam Singh , aapka SFMS registration safaltapurvak approve ho gaya hai. Ab aap khaad ki booking kar sakte hain.
+[2026-10-20 18:51:06] TO: 8765782107 | MSG: Namaste Anupam Singh , aapki 2 Urea ki booking (Date: 2026-10-20) cancel kar di gayi hai.
+[2026-10-20 19:33:00] TO: 8765782107 | MSG: Namaste Anupam Singh , aapki 2 Urea ki booking (Date: 2026-10-20) cancel kar di gayi hai.
+[2026-10-20 19:54:05] TO: 8765782107 | MSG: Namaste Anupam Singh , aapki 2 Urea ki booking (Date: 2026-10-20) cancel kar di gayi hai.
+[2026-10-20 19:55:09] TO: 8765782107 | MSG: Namaste Anupam Singh , aapki 1 DAP, 1 NPK ki booking (Date: 2026-10-20) cancel kar di gayi hai.
+[2026-10-20 21:10:36] TO: 8765782107 | MSG: Namaste Anupam Singh , aapki 2 Urea, 1 DAP ki booking ka samay badha diya gaya hai. Kripya app mein naya samay check karein.
+[2026-10-21 15:35:58] TO: 8765782107 | MSG: Namaste Anupam Singh , aapki 1 Urea ki booking (Date: 2026-10-21) confirm ho gayi hai. Aapka Token No: TKN-385551 hai.
+[2026-10-27 12:11:50] TO: 9151654278 | MSG: Namaste Ritesh, khed hai ki aapka SFMS registration aswikar (reject) kar diya gaya hai. Kripya nikatam Kendra se sampark karein.
+[2026-10-27 12:11:59] TO: 9958623899 | MSG: Namaste Vivek, aapka SFMS registration safaltapurvak approve ho gaya hai. Ab aap khaad ki booking kar sakte hain.
+[2026-10-27 13:08:43] TO: 7275095741 | MSG: Namaste Vinayak, aapki 1 Urea ki booking (Date: 2026-10-27) cancel kar di gayi hai.
+[2026-10-27 13:08:48] TO: 7275095741 | MSG: Namaste Vinayak, aapki 1 tsp, 1 ssp ki booking (Date: 2026-10-27) confirm ho gayi hai. Aapka Token No: TKN-547514 hai.
+[2026-10-27 16:04:27] TO: 7275095741 | MSG: Namaste Vinayak, aapki 2 urea ki booking (Date: 2026-10-27) confirm ho gayi hai. Aapka Token No: TKN-577628 hai.
+[2026-10-27 16:04:32] TO: 7275095741 | MSG: Namaste Vinayak, aapki 1 ssp ki booking (Date: 2026-10-27) confirm ho gayi hai. Aapka Token No: TKN-555435 hai.
+[2026-10-28 13:55:09] TO: 7275095741 | MSG: Namaste Vinayak, aapki 2 urea ki booking (Date: 2026-10-28) cancel kar di gayi hai.
+[2026-10-28 14:06:23] TO: 9151654278 | MSG: Namaste Ritesh, aapka SFMS registration safaltapurvak approve ho gaya hai. Ab aap khaad ki booking kar sakte hain.
+[2026-10-28 16:35:40] TO: 9958623899 | MSG: Namaste Vivek , aapka SFMS registration safaltapurvak approve ho gaya hai. Ab aap khaad ki booking kar sakte hain.
+[2026-10-28 16:43:55] TO: 9958623899 | MSG: Namaste Vivek , aapki 1 urea, 1 dap ki booking (Date: 2026-10-28) cancel kar di gayi hai.
+[2026-10-29 00:41:07] TO: 9151654281 | MSG: Namaste Pompom, aapka SFMS registration safaltapurvak approve ho gaya hai. Ab aap khaad ki booking kar sakte hain.
+[2026-10-29 00:50:58] TO: 9151654281 | MSG: Namaste Pompom, aapki 2 urea, 1 dap ki booking ka samay badha diya gaya hai. Kripya app mein naya samay check karein.
+[2026-10-29 01:19:07] TO: 9151654281 | MSG: Namaste Pompom, aapki 1 urea, 1 dap, 1 tsp, 2 ssp ki booking (Date: 2026-10-29) confirm ho gayi hai. Aapka Token No: TKN-873794 hai.
+[2026-10-29 12:28:10] TO: 9151654281 | MSG: Namaste Pompom, aapki 2 urea ki booking (Date: 2026-10-29) confirm ho gayi hai. Aapka Token No: TKN-741272 hai.
+[2026-10-29 16:23:41] TO: 7651909608 | MSG: Namaste Anupma, aapka SFMS registration safaltapurvak approve ho gaya hai. Ab aap khaad ki booking kar sakte hain.
+[2026-10-29 16:23:54] TO: 9336638912 | MSG: Namaste Sneha gupta, khed hai ki aapka SFMS registration aswikar (reject) kar diya gaya hai. Kripya nikatam Kendra se sampark karein.
+[2026-10-29 16:25:47] TO: 7651909608 | MSG: Namaste Anupma, aapki 1 urea ki booking (Date: 2026-10-29) cancel kar di gayi hai.
+[2026-10-29 16:26:25] TO: 7651909608 | MSG: Namaste Anupma, aapki 1 urea ki booking (Date: 2026-10-29) confirm ho gayi hai. Aapka Token No: TKN-637021 hai.

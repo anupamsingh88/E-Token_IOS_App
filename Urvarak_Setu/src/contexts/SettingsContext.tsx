@@ -41,6 +41,24 @@ interface AppSettings {
     play_store_url?: string;
     update_title?: string;
     update_message?: string;
+    farmer_app_latest_version_code?: number;
+    farmer_app_force_update?: boolean;
+    farmer_app_latest_version_name?: string;
+    farmer_app_update_title?: string;
+    farmer_app_update_message?: string;
+    farmer_app_play_store_url?: string;
+    farmer_app_ios_min_build?: number;
+    farmer_app_ios_latest_build?: number;
+    farmer_app_ios_force_update?: boolean;
+    farmer_app_ios_latest_version_name?: string;
+    farmer_app_ios_update_title?: string;
+    farmer_app_ios_update_message?: string;
+    farmer_app_app_store_url?: string;
+    app_store_url?: string;
+    farmer_app_logo_url?: string;
+    farmer_app_icon_url?: string;
+    farmer_app_bg_image_url?: string;
+    bg_image_url?: string;
     // legacy — kept for any other screens that may still use it
     app_content?: Record<string, string>;
 }

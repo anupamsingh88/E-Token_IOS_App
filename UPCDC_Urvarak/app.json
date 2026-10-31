@@ -2,7 +2,7 @@
   "expo": {
     "name": "UPCDC",
     "slug": "upcdc",
-    "version": "2.0.5",
+    "version": "2.0.7",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "buildNumber": "2",
+      "buildNumber": "4",
       "bundleIdentifier": "com.weknowtech.upcdcurvarak",
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
@@ -29,7 +29,7 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.weknowtech.upcdcurvarak",
-      "versionCode": 16,
+      "versionCode": 18,
       "googleServicesFile": "./google-services.json",
       "blockedPermissions": [
         "android.permission.READ_MEDIA_AUDIO",

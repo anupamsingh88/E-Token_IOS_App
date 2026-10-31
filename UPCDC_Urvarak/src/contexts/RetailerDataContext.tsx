@@ -3,10 +3,21 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiFetch } from '../utils/apiClient';
 import { API_BASE_URL, API_ENDPOINTS } from '../config/config';
 
-interface RequestCounts {
+export interface StockItem {
+    id: string;
+    type: string;
+    name: string;
+    nameHindi: string;
+    stock: number;
+    price: number;
+    imageUrl?: string | null;
+}
+
+export interface RequestCounts {
     registrations: { pending: number; approved: number; rejected: number };
     bookings: { pending: number; approved: number; cancelled: number; extended: number; collected: number };
-    stock: { urea: number; dap: number; npk: number; mop: number };
+    stock: Record<string, number>;
+    stock_items?: StockItem[];
     total_farmers: number;
 }
 
@@ -137,6 +148,7 @@ export const RetailerDataProvider: React.FC<{ children: ReactNode }> = ({ childr
                         approved: uniqueApproved
                     },
                     stock: data.current_stock || { urea: 0, dap: 0, npk: 0, mop: 0 },
+                    stock_items: data.stock_items || [],
                     total_farmers: totalFarmers
                 };
 

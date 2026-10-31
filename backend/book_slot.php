@@ -82,7 +82,7 @@ try {
 
         // A. Validate Quota
         $limit_key = strtolower($product);
-        $limit_per_ha = isset($limits[$limit_key]) ? $limits[$limit_key] : 0;
+        $limit_per_ha = array_key_exists($limit_key, $limits) ? $limits[$limit_key] : 2.0;
         $max_allowed = floor($land_area * $limit_per_ha);
         if ($limit_per_ha > 0 && $max_allowed < 1) {
             $max_allowed = 1;

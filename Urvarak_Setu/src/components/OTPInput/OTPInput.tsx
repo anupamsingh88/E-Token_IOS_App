@@ -4,69 +4,72 @@ import {
     TextInput,
     StyleSheet,
     Text,
-    Platform,
+    Pressable,
+    Animated,
 } from 'react-native';
 import { COLORS, SPACING, FONT_SIZES, FONT_WEIGHTS, BORDER_RADIUS } from '../../constants';
-import { scale, verticalScale, moderateScale } from '../../utils/responsive';
-
+import { moderateScale, verticalScale } from '../../utils/responsive';
 
 interface OTPInputProps {
     value: string;
     onChange: (otp: string) => void;
     error?: string;
     label?: string;
+    length?: number;
+    autoFocus?: boolean;
 }
 
-export default function OTPInput({ value, onChange, error, label }: OTPInputProps) {
-    const [otp, setOtp] = useState<string[]>(value.split('').slice(0, 6));
-    const inputRefs = useRef<(TextInput | null)[]>([]);
+export default function OTPInput({
+    value = '',
+    onChange,
+    error,
+    label,
+    length = 6,
+    autoFocus = true,
+}: OTPInputProps) {
+    const inputRef = useRef<TextInput>(null);
+    const [isFocused, setIsFocused] = useState(false);
+
+    // Blinking cursor animation for active box
+    const cursorOpacity = useRef(new Animated.Value(1)).current;
 
     useEffect(() => {
-        // Update internal state when external value changes
-        setOtp(value.split('').slice(0, 6));
-    }, [value]);
-
-    const handleChange = (text: string, index: number) => {
-        // Only allow numbers
-        if (text && !/^\d+$/.test(text)) return;
-
-        const newOtp = [...otp];
-
-        // Handle paste
-        if (text.length > 1) {
-            const pastedData = text.slice(0, 6).split('');
-            pastedData.forEach((char, i) => {
-                if (index + i < 6) {
-                    newOtp[index + i] = char;
-                }
-            });
-            setOtp(newOtp);
-            onChange(newOtp.join(''));
-
-            // Focus last filled box or next empty box
-            const nextIndex = Math.min(index + pastedData.length, 5);
-            inputRefs.current[nextIndex]?.focus();
-            return;
+        let blinkAnimation: Animated.CompositeAnimation | null = null;
+        if (isFocused && value.length < length) {
+            blinkAnimation = Animated.loop(
+                Animated.sequence([
+                    Animated.timing(cursorOpacity, {
+                        toValue: 0,
+                        duration: 450,
+                        useNativeDriver: true,
+                    }),
+                    Animated.timing(cursorOpacity, {
+                        toValue: 1,
+                        duration: 450,
+                        useNativeDriver: true,
+                    }),
+                ])
+            );
+            blinkAnimation.start();
+        } else {
+            cursorOpacity.setValue(0);
         }
 
-        // Single character input
-        newOtp[index] = text;
-        setOtp(newOtp);
-        onChange(newOtp.join(''));
+        return () => {
+            if (blinkAnimation) {
+                blinkAnimation.stop();
+            }
+        };
+    }, [isFocused, value.length, length, cursorOpacity]);
 
-        // Auto-advance to next box
-        if (text && index < 5) {
-            inputRefs.current[index + 1]?.focus();
-        }
+    const handleContainerPress = () => {
+        inputRef.current?.focus();
     };
 
-    const handleKeyPress = (e: any, index: number) => {
-        if (e.nativeEvent.key === 'Backspace') {
-            if (!otp[index] && index > 0) {
-                // Move to previous box if current is empty
-                inputRefs.current[index - 1]?.focus();
-            }
-        }
+    const handleTextChange = (text: string) => {
+        // Strip non-numeric characters and slice to maximum length
+        const numericOnly = text.replace(/[^0-9]/g, '').slice(0, length);
+        onChange(numericOnly);
     };
 
     return (
@@ -76,29 +79,60 @@ export default function OTPInput({ value, onChange, error, label }: OTPInputProp
                     {label} <Text style={styles.required}>*</Text>
                 </Text>
             )}
-            <View style={styles.otpContainer}>
-                {[0, 1, 2, 3, 4, 5].map((index) => (
-                    <TextInput
-                        key={index}
-                        ref={(ref) => {
-                            inputRefs.current[index] = ref;
-                        }}
-                        style={[
-                            styles.otpBox,
-                            otp[index] && styles.otpBoxFilled,
-                            error && styles.otpBoxError,
-                        ]}
-                        value={otp[index] || ''}
-                        onChangeText={(text) => handleChange(text, index)}
-                        onKeyPress={(e) => handleKeyPress(e, index)}
-                        keyboardType="number-pad"
-                        maxLength={1}
-                        selectTextOnFocus
-                        autoFocus={index === 0}
-                    />
-                ))}
-            </View>
-            {error && <Text style={styles.errorText}>{error}</Text>}
+
+            <Pressable
+                onPress={handleContainerPress}
+                style={styles.otpContainer}
+                accessible={false}
+            >
+                {Array.from({ length }).map((_, index) => {
+                    const char = value[index] || '';
+                    const isCurrent = isFocused && index === value.length;
+                    const isFilled = Boolean(char);
+
+                    return (
+                        <View
+                            key={index}
+                            style={[
+                                styles.otpBox,
+                                isFilled && styles.otpBoxFilled,
+                                isCurrent && styles.otpBoxActive,
+                                Boolean(error) && styles.otpBoxError,
+                            ]}
+                        >
+                            {char ? (
+                                <Text style={styles.otpText}>{char}</Text>
+                            ) : isCurrent ? (
+                                <Animated.View
+                                    style={[
+                                        styles.cursor,
+                                        { opacity: cursorOpacity },
+                                    ]}
+                                />
+                            ) : null}
+                        </View>
+                    );
+                })}
+
+                {/* Single hidden master TextInput for instantaneous, zero-lag input */}
+                <TextInput
+                    ref={inputRef}
+                    value={value}
+                    onChangeText={handleTextChange}
+                    onFocus={() => setIsFocused(true)}
+                    onBlur={() => setIsFocused(false)}
+                    keyboardType="number-pad"
+                    maxLength={length}
+                    textContentType="oneTimeCode"
+                    autoComplete="sms-otp"
+                    importantForAutofill="yes"
+                    autoFocus={autoFocus}
+                    caretHidden={true}
+                    style={styles.hiddenInput}
+                />
+            </Pressable>
+
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
         </View>
     );
 }
@@ -118,38 +152,57 @@ const styles = StyleSheet.create({
     },
     otpContainer: {
         flexDirection: 'row',
-        justifyContent: 'center', // Center aligned with explicit gap
-        gap: 10, // Increased gap
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        width: '100%',
+        position: 'relative',
     },
     otpBox: {
-        width: moderateScale(45), // Restore width to a good size
-        height: verticalScale(50),
+        flex: 1,
+        maxWidth: 48,
+        minWidth: 32,
+        height: verticalScale(48),
+        marginHorizontal: 3,
         borderWidth: 1.5,
         borderColor: COLORS.grayLight,
         borderRadius: BORDER_RADIUS.md,
         backgroundColor: COLORS.white,
-        fontSize: FONT_SIZES.xl,
-        fontWeight: FONT_WEIGHTS.bold,
-        color: COLORS.textPrimary,
-        textAlign: 'center',
-        textAlignVertical: 'center',
-        paddingVertical: 0,
-        ...Platform.select({
-            web: {
-                outlineStyle: 'none',
-            },
-        }),
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     otpBoxFilled: {
         borderColor: COLORS.primary,
         backgroundColor: COLORS.primary + '08',
     },
+    otpBoxActive: {
+        borderColor: COLORS.primary,
+        borderWidth: 2,
+        backgroundColor: COLORS.white,
+    },
     otpBoxError: {
         borderColor: COLORS.error,
+        backgroundColor: COLORS.error + '08',
+    },
+    otpText: {
+        fontSize: moderateScale(22),
+        fontWeight: FONT_WEIGHTS.bold,
+        color: COLORS.textPrimary,
+        textAlign: 'center',
+    },
+    cursor: {
+        width: 2,
+        height: 22,
+        backgroundColor: COLORS.primary,
+        borderRadius: 1,
+    },
+    hiddenInput: {
+        ...StyleSheet.absoluteFillObject,
+        opacity: 0,
     },
     errorText: {
         fontSize: FONT_SIZES.sm,
         color: COLORS.error,
         marginTop: SPACING.xs,
+        marginLeft: 2,
     },
 });

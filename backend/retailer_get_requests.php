@@ -5,6 +5,7 @@ header("Access-Control-Allow-Headers: Content-Type");
 header('Content-Type: application/json');
 
 include 'db_connect.php';
+require_once 'auto_cancel_helper.php';
 
 if ($conn === null) {
     echo json_encode(["status" => "error", "message" => "Database connection is null!"]);
@@ -98,72 +99,88 @@ $response = [
         ],
         "bookings" => [],
         "changes" => [],
-        "current_stock" => [
-            "urea" => 0,
-            "dap" => 0,
-            "npk" => 0,
-            "mop" => 0
-        ]
+        "current_stock" => [],
+        "stock_items" => []
     ]
 ];
 
+// Fetch Dynamic Products from fertilizer_products (prefer retailer_image_url for UPCDC)
+$prod_query = "SELECT type_id, name, nameHindi, pricePerBag, COALESCE(retailer_image_url, imageUrl) as imageUrl FROM fertilizer_products ORDER BY id ASC";
+$prod_res = $conn->query($prod_query);
+$dynamic_products = [];
+if ($prod_res) {
+    while ($pr = $prod_res->fetch_assoc()) {
+        if (!empty($pr['imageUrl'])) {
+            $imagePathOnly = explode('?', $pr['imageUrl'])[0];
+            $localFile = __DIR__ . '/' . ltrim(str_replace('\\', '/', $imagePathOnly), '/');
+            if (file_exists($localFile)) {
+                $pr['imageUrl'] = $imagePathOnly . '?v=' . filemtime($localFile);
+            }
+        }
+        $dynamic_products[] = $pr;
+    }
+}
+
+// Ensure stock columns exist in retailer_stock dynamically (ordered after the previous product)
+$stock_cols_res = $conn->query("SHOW COLUMNS FROM retailer_stock");
+$existing_stock_cols = [];
+if ($stock_cols_res) {
+    while ($sc = $stock_cols_res->fetch_assoc()) {
+        $existing_stock_cols[] = strtolower($sc['Field']);
+    }
+}
+
+$prev_col_name = 'date';
+foreach ($dynamic_products as $pr) {
+    $col_name = strtoupper($pr['type_id']) . '_stock';
+    if (!in_array(strtolower($col_name), $existing_stock_cols)) {
+        $after_clause = in_array(strtolower($prev_col_name), $existing_stock_cols) ? "AFTER `$prev_col_name`" : "";
+        @$conn->query("ALTER TABLE retailer_stock ADD COLUMN `$col_name` INT DEFAULT 0 $after_clause");
+        $existing_stock_cols[] = strtolower($col_name);
+    }
+    $prev_col_name = $col_name;
+}
+
 // Fetch Current Stock (Using Internal ID)
 // Fallback to most recent record if today's is missing
-$stock_query = "SELECT UREA_stock, DAP_stock, NPK_stock, MOP_stock FROM retailer_stock 
+$stock_query = "SELECT * FROM retailer_stock 
                 WHERE retailer_id = ? 
                 ORDER BY CASE WHEN date = '$today' THEN 0 ELSE 1 END, date DESC LIMIT 1";
 $st_stmt = $conn->prepare($stock_query);
+$stock_row = null;
 if ($st_stmt) {
     $st_stmt->bind_param("i", $retailer_id_int);
     $st_stmt->execute();
-    $stock_res = $st_stmt->get_result()->fetch_assoc();
-    if ($stock_res) {
-        $response['data']['current_stock'] = [
-            "urea" => (int) ($stock_res['UREA_stock'] ?? 0),
-            "dap" => (int) ($stock_res['DAP_stock'] ?? 0),
-            "npk" => (int) ($stock_res['NPK_stock'] ?? 0),
-            "mop" => (int) ($stock_res['MOP_stock'] ?? 0)
-        ];
-    }
+    $stock_row = $st_stmt->get_result()->fetch_assoc();
     $st_stmt->close();
 }
 
-// Auto-cancel expired bookings for THIS retailer and revert stock
-$expired_query = "SELECT id, product, quantity, booking_date FROM product_bookings 
-                  WHERE retailer_id = ? AND (status = 'Pending' OR status = 'Approved') AND booking_date < '$today' ";
-$e_stmt = $conn->prepare($expired_query);
-if ($e_stmt) {
-    $e_stmt->bind_param("s", $retailer_id_str);
-    $e_stmt->execute();
-    $expired_res = $e_stmt->get_result();
-    while ($expired_row = $expired_res->fetch_assoc()) {
-        $bid = $expired_row['id'];
-        $eprod = strtolower($expired_row['product']);
-        $eqty = (int) $expired_row['quantity'];
-        $ebdate = $expired_row['booking_date'];
-
-        // 1. Revert Stock in the day's record
-        $col_map = ['urea' => 'UREA_stock', 'dap' => 'DAP_stock', 'npk' => 'NPK_stock', 'mop' => 'MOP_stock'];
-        $ecol = $col_map[$eprod] ?? (strtoupper($eprod) . '_stock');
-
-        // Use prepared statement or at least quotes for strings
-        $upd_stock = $conn->prepare("UPDATE retailer_stock SET $ecol = $ecol + ? WHERE retailer_id = ? AND date = ?");
-        if ($upd_stock) {
-            $upd_stock->bind_param("iss", $eqty, $retailer_id_str, $ebdate);
-            $upd_stock->execute();
-            $upd_stock->close();
-        }
-
-        // 2. Update Status to Cancelled
-        $upd_status = $conn->prepare("UPDATE product_bookings SET status = 'Cancelled', cancelled_at = NOW() WHERE id = ?");
-        if ($upd_status) {
-            $upd_status->bind_param("i", $bid);
-            $upd_status->execute();
-            $upd_status->close();
-        }
+$current_stock_map = [];
+$stock_items = [];
+foreach ($dynamic_products as $pr) {
+    $type_key = strtolower($pr['type_id']);
+    $col_name = strtoupper($pr['type_id']) . '_stock';
+    $stock_val = 0;
+    if ($stock_row && isset($stock_row[$col_name])) {
+        $stock_val = (int)$stock_row[$col_name];
     }
-    $e_stmt->close();
+    $current_stock_map[$type_key] = $stock_val;
+    $stock_items[] = [
+        "id" => $type_key,
+        "type" => $type_key,
+        "name" => $pr['name'],
+        "nameHindi" => $pr['nameHindi'] ?: $pr['name'],
+        "stock" => $stock_val,
+        "price" => (float)$pr['pricePerBag'],
+        "imageUrl" => $pr['imageUrl']
+    ];
 }
+
+$response['data']['current_stock'] = $current_stock_map;
+$response['data']['stock_items'] = $stock_items;
+
+// Auto-cancel expired bookings for THIS retailer and revert stock
+autoCancelExpiredBookings($conn, $retailer_id_str, null);
 
 // Helper to check if column exists
 function columnExists($conn, $table, $column)
@@ -173,9 +190,15 @@ function columnExists($conn, $table, $column)
 }
 
 // Fetch Registration Requests (Farmers who selected this retailer)
-$reg_query = "SELECT farmer_id as id, name as full_name, mobile as mobile_number, aadhaar, village_id as village, status, created_at, khatauni_number as khasra_number, khasra_rukba, aadhaar_photo, khatauni_photo, profile_photo, approved_at, approved_by,
-              (SELECT COUNT(*) FROM product_bookings WHERE farmer_id = farmer_info.farmer_id AND status != 'Cancelled') as booking_count
-              FROM farmer_info WHERE selected_retailer_id = ?";
+$reg_cols = "farmer_info.farmer_id as id, farmer_info.name as full_name, farmer_info.mobile as mobile_number, farmer_info.aadhaar, farmer_info.village_id as village, farmer_info.status, farmer_info.created_at, farmer_info.khatauni_number as khasra_number, farmer_info.khasra_rukba, farmer_info.aadhaar_photo, farmer_info.khatauni_photo, farmer_info.profile_photo, farmer_info.approved_at, farmer_info.approved_by, farmer_info.registry_id, farmer_info.kisan_panjikaran_number,
+              (SELECT COUNT(*) FROM product_bookings WHERE farmer_id = farmer_info.farmer_id AND status != 'Cancelled') as booking_count";
+if (columnExists($conn, 'farmer_info', 'rejection_reason')) {
+    $reg_cols .= ", farmer_info.rejection_reason";
+}
+if (columnExists($conn, 'farmer_info', 'kisan_panjikaran_photo')) {
+    $reg_cols .= ", farmer_info.kisan_panjikaran_photo";
+}
+$reg_query = "SELECT $reg_cols FROM farmer_info WHERE selected_retailer_id = ? ORDER BY id DESC";
 $stmt = $conn->prepare($reg_query);
 if ($stmt) {
     $stmt->bind_param("s", $retailer_id_str);
@@ -195,12 +218,17 @@ if ($stmt) {
             "village" => "Village ID: " . $row['village'],
             "khatauni_no" => $row['khasra_number'] ?? "N/A",
             "land_acres" => $row['khasra_rukba'] ?? 0,
+            "registry_id" => $row['registry_id'] ?? null,
+            "kisan_panjikaran_number" => $row['kisan_panjikaran_number'] ?? null,
+            "kisan_code" => $row['kisan_panjikaran_number'] ?? null,
             "created_at" => date('d M Y, h:i A', $created_at),
             "approved_at" => $approved_at ? date('d M Y, h:i A', $approved_at) : null,
             "approved_by" => $row['approved_by'],
+            "rejection_reason" => $row['rejection_reason'] ?? null,
             "status" => $status_num,
             "aadhaar_photo" => $row['aadhaar_photo'],
             "khatauni_photo" => $row['khatauni_photo'],
+            "kisan_panjikaran_photo" => $row['kisan_panjikaran_photo'] ?? null,
             "photo" => $row['profile_photo'],
             "has_bookings" => ($b_count > 0),
             "booking_count" => $b_count
@@ -227,8 +255,14 @@ if (columnExists($conn, 'product_bookings', 'collected_at'))
     $columns .= ", b.collected_at";
 if (columnExists($conn, 'product_bookings', 'cancelled_at'))
     $columns .= ", b.cancelled_at";
+if (columnExists($conn, 'product_bookings', 'cancellation_reason'))
+    $columns .= ", b.cancellation_reason";
+if (columnExists($conn, 'product_bookings', 'cancelled_by'))
+    $columns .= ", b.cancelled_by";
 if (columnExists($conn, 'product_bookings', 'extended_at'))
     $columns .= ", b.extended_at";
+if (columnExists($conn, 'product_bookings', 'extension_reason'))
+    $columns .= ", b.extension_reason";
 if (columnExists($conn, 'product_bookings', 'approved_date'))
     $columns .= ", b.approved_date";
 if (columnExists($conn, 'product_bookings', 'created_at'))
@@ -248,9 +282,18 @@ if (columnExists($conn, 'farmer_info', 'profile_photo'))
 else if (columnExists($conn, 'farmer_info', 'photo'))
     $columns .= ", f.photo";
 
+if (columnExists($conn, 'farmer_info', 'registry_id'))
+    $columns .= ", f.registry_id";
+
+if (columnExists($conn, 'farmer_info', 'kisan_panjikaran_number'))
+    $columns .= ", f.kisan_panjikaran_number";
+
+if (columnExists($conn, 'farmer_info', 'kisan_panjikaran_photo'))
+    $columns .= ", f.kisan_panjikaran_photo";
+
 $book_query = "SELECT $columns
                FROM product_bookings b 
-               JOIN farmer_info f ON b.farmer_id = f.farmer_id 
+               LEFT JOIN farmer_info f ON (b.farmer_id = f.farmer_id OR b.farmer_id = f.id) 
                WHERE b.retailer_id = ?
                ORDER BY b.booking_date DESC, b.order_id";
 
@@ -275,19 +318,36 @@ if ($stmt) {
                 "approved_date" => isset($row['approved_date']) ? date('d M Y', strtotime($row['approved_date'])) : null,
                 "cancelled_at" => isset($row['cancelled_at']) ? date('d M Y', strtotime($row['cancelled_at'])) : null,
                 "extended_at" => isset($row['extended_at']) ? date('d M Y', strtotime($row['extended_at'])) : null,
+                "extension_reason" => $row['extension_reason'] ?? null,
                 "status" => $row['status'],
                 "token_number" => $row['token_number'],
+                "cancellation_reason" => $row['cancellation_reason'] ?? null,
+                "cancelled_by" => $row['cancelled_by'] ?? null,
                 "khatauni_no" => $row['khasra_number'] ?? "N/A",
                 "land_acres" => $row['khasra_rukba'] ?? 0,
+                "registry_id" => $row['registry_id'] ?? null,
+                "kisan_panjikaran_number" => $row['kisan_panjikaran_number'] ?? null,
+                "kisan_code" => $row['kisan_panjikaran_number'] ?? null,
+                "kisan_panjikaran_photo" => $row['kisan_panjikaran_photo'] ?? null,
                 "photo" => $row['photo'] ?? null,
                 "collected_at" => isset($row['collected_at']) ? date('d M Y', strtotime($row['collected_at'])) : null,
                 "items" => []
             ];
         }
 
-        // Ensure token_number is captured if it exists in any row of the group
+        // Ensure cancellation_reason, extension_reason and token_number are captured if present
+        if (empty($grouped_bookings[$oid]['cancellation_reason']) && !empty($row['cancellation_reason'])) {
+            $grouped_bookings[$oid]['cancellation_reason'] = $row['cancellation_reason'];
+        }
+        if (empty($grouped_bookings[$oid]['extension_reason']) && !empty($row['extension_reason'])) {
+            $grouped_bookings[$oid]['extension_reason'] = $row['extension_reason'];
+        }
         if (empty($grouped_bookings[$oid]['token_number']) && !empty($row['token_number'])) {
             $grouped_bookings[$oid]['token_number'] = $row['token_number'];
+        }
+        if (empty($grouped_bookings[$oid]['kisan_panjikaran_number']) && !empty($row['kisan_panjikaran_number'])) {
+            $grouped_bookings[$oid]['kisan_panjikaran_number'] = $row['kisan_panjikaran_number'];
+            $grouped_bookings[$oid]['kisan_code'] = $row['kisan_panjikaran_number'];
         }
 
         $grouped_bookings[$oid]['items'][] = [

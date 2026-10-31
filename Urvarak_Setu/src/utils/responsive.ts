@@ -50,13 +50,13 @@ const TextInputElement = TextInput as any;
 if (TextElement.defaultProps == null) {
     TextElement.defaultProps = {};
 }
-// Limit the OS font scaling multiplier to max 1.15x
-TextElement.defaultProps.maxFontSizeMultiplier = 1.15;
+// Limit the OS font scaling multiplier to max 1.3x so accessibility scaling works without breaking layouts
+TextElement.defaultProps.maxFontSizeMultiplier = 1.3;
 
 if (TextInputElement.defaultProps == null) {
     TextInputElement.defaultProps = {};
 }
-TextInputElement.defaultProps.maxFontSizeMultiplier = 1.15;
+TextInputElement.defaultProps.maxFontSizeMultiplier = 1.3;
 
 // --- TABLET DETECTION & RESPONSIVE HOOK ---
 export const isTabletDevice = (width = SCREEN_WIDTH, height = SCREEN_HEIGHT): boolean => {

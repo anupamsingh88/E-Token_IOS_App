@@ -34,6 +34,8 @@ import {
 import { API_ENDPOINTS } from '../../config/config';
 import { apiFetch } from '../../utils/apiClient';
 import { scale, verticalScale, moderateScale } from '../../utils/responsive';
+import { useSettings } from '../../contexts/SettingsContext';
+import { resolveAppImage } from '../../utils/imageResolver';
 
 
 interface FarmerLoginScreenProps {
@@ -47,6 +49,10 @@ export default function FarmerLoginScreen({
     onBack,
     onRegister,
 }: FarmerLoginScreenProps) {
+    const { settings } = useSettings();
+    const defaultBg = require('../../../assets/Farmer in golden wheat field.png');
+    const bgSource = resolveAppImage(settings?.farmer_app_bg_image_url || settings?.bg_image_url, defaultBg);
+
     const [mobileNumber, setMobileNumber] = useState('');
     const [otp, setOtp] = useState('');
     const [otpSent, setOtpSent] = useState(false);
@@ -361,7 +367,7 @@ export default function FarmerLoginScreen({
     return (
         <View style={{ flex: 1, backgroundColor: '#D49544' }}>
             <Image
-                source={require('../../../assets/Farmer in golden wheat field.png')}
+                source={bgSource}
                 style={[
                     styles.backgroundImage,
                     {

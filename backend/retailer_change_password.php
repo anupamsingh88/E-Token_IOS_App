@@ -16,12 +16,11 @@ $response = array('success' => false, 'message' => '');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $retailer_id = trim($_POST['retailer_id'] ?? '');
-    $current_pass = trim($_POST['current_password'] ?? '');
     $new_pass = trim($_POST['new_password'] ?? '');
     $confirm_pass = trim($_POST['confirm_password'] ?? '');
 
     // Validation
-    if (empty($retailer_id) || empty($current_pass) || empty($new_pass) || empty($confirm_pass)) {
+    if (empty($retailer_id) || empty($new_pass) || empty($confirm_pass)) {
         $response['message'] = 'सभी फ़ील्ड भरना ज़रूरी है';
         echo json_encode($response);
         exit;
@@ -40,8 +39,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     try {
-        // Fetch current retailer password - try both id and retailer_id for robustness
-        $stmt = $pdo->prepare("SELECT id, password, district_name, retailer_id FROM retailer_info WHERE id = ? OR retailer_id = ?");
+        // Fetch current retailer - try both id and retailer_id for robustness
+        $stmt = $pdo->prepare("SELECT id, retailer_id FROM retailer_info WHERE id = ? OR retailer_id = ?");
         $stmt->execute([$retailer_id, $retailer_id]);
         $retailer = $stmt->fetch();
 
@@ -51,22 +50,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
-        // Use the actual retailer_id string from DB for default pass calculation if needed
-        $db_retailer_id_str = $retailer['retailer_id'];
         $db_id = $retailer['id'];
 
-        // Compute default password (same logic as login)
-        $default_pass = strtolower(substr($retailer['district_name'], 0, 4)) . substr($db_retailer_id_str, -4);
-        $stored_pass = !empty($retailer['password']) ? $retailer['password'] : $default_pass;
-
-        // Verify current password
-        if ($current_pass !== $stored_pass && $current_pass !== 'test1234') {
-            $response['message'] = 'मौजूदा पासवर्ड गलत है';
-            echo json_encode($response);
-            exit;
-        }
-
-        // Update password
+        // Update password directly
         $stmt_update = $pdo->prepare("UPDATE retailer_info SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?");
         $stmt_update->execute([$new_pass, $db_id]);
 

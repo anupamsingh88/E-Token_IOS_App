@@ -123,6 +123,8 @@ export default function Input({
 
                 {/* Text Input */}
                 <TextInput
+                    autoComplete="off"
+                    importantForAutofill="no"
                     {...textInputProps}
                     style={[
                         styles.input,

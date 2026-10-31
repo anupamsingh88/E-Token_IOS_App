@@ -95,6 +95,42 @@ function AppInner() {
   const updateStatus = React.useMemo(() => {
     if (!settings) return { show: false, isOptional: false };
 
+    // ── iOS Update Check ──────────────────────────────────────────────────────────
+    // On iOS (TestFlight / App Store), only check if iOS-specific settings are explicitly configured
+    if (Platform.OS === 'ios') {
+      const iosMinBuild = Number(settings.farmer_app_ios_min_build ?? 0);
+      const iosLatestBuild = Number(settings.farmer_app_ios_latest_build ?? iosMinBuild);
+      const isIosForceActive = Boolean(settings.farmer_app_ios_force_update);
+
+      if (iosMinBuild === 0 && !isIosForceActive) {
+        // No iOS force update configured (e.g. TestFlight testing phase)
+        return { show: false, isOptional: false };
+      }
+
+      let isForced = false;
+      let isOptionalAvailable = false;
+
+      if (iosMinBuild > 0 && CURRENT_BUILD_VERSION < iosMinBuild) {
+        isForced = true;
+      } else if (isIosForceActive && iosLatestBuild > 0 && CURRENT_BUILD_VERSION < iosLatestBuild) {
+        isForced = true;
+      }
+
+      if (!isForced && iosLatestBuild > 0 && CURRENT_BUILD_VERSION < iosLatestBuild) {
+        isOptionalAvailable = true;
+      }
+
+      if (isOptionalAvailable && hasSkippedUpdate) {
+        return { show: false, isOptional: false };
+      }
+
+      return {
+        show: isForced || isOptionalAvailable,
+        isOptional: isOptionalAvailable
+      };
+    }
+
+    // ── Android Update Check ──────────────────────────────────────────────────────
     const minVersionCode = Number(settings.farmer_app_min_version_code ?? settings.min_app_version_code ?? 0);
     const latestVersionCode = Number(settings.farmer_app_latest_version_code ?? minVersionCode);
     const isForceActive = Boolean(settings.farmer_app_force_update ?? settings.force_update_active ?? settings.force_update);
@@ -462,10 +498,23 @@ function AppInner() {
         isOptional={updateStatus.isOptional}
         onSkip={() => setHasSkippedUpdate(true)}
         currentVersion={CURRENT_APP_VERSION}
-        latestVersion={settings?.farmer_app_latest_version_name || settings?.latest_app_version_name || settings?.latest_app_version || CURRENT_APP_VERSION}
-        title={settings?.farmer_app_update_title || settings?.update_title}
-        message={settings?.farmer_app_update_message || settings?.update_message}
+        latestVersion={
+          Platform.OS === 'ios'
+            ? settings?.farmer_app_ios_latest_version_name || CURRENT_APP_VERSION
+            : settings?.farmer_app_latest_version_name || settings?.latest_app_version_name || settings?.latest_app_version || CURRENT_APP_VERSION
+        }
+        title={
+          Platform.OS === 'ios'
+            ? settings?.farmer_app_ios_update_title || settings?.farmer_app_update_title || settings?.update_title
+            : settings?.farmer_app_update_title || settings?.update_title
+        }
+        message={
+          Platform.OS === 'ios'
+            ? settings?.farmer_app_ios_update_message || settings?.farmer_app_update_message || settings?.update_message
+            : settings?.farmer_app_update_message || settings?.update_message
+        }
         playStoreUrl={settings?.farmer_app_play_store_url || settings?.play_store_url}
+        appStoreUrl={settings?.farmer_app_app_store_url || settings?.app_store_url}
       />
 
     </SafeAreaProvider>

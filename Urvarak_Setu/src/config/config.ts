@@ -11,8 +11,10 @@
 // Base URL for backend API
 // export const API_BASE_URL = 'http://192.168.1.38:8080/backend';
 // export const API_BASE_URL = 'http://192.168.29.97:8080/backend';
-// export const API_BASE_URL = 'http://192.168.0.142/backend';
-// export const API_BASE_URL = 'https://ayodhyatourist.in/backend';
+// export const API_BASE_URL = 'http://192.168.1.67:8080/backend';
+// export const API_BASE_URL = 'http://192.168.1.105:8080/backend';
+// export const API_BASE_URL = 'http://192.168.0.129:8080/backend';
+
 export const API_BASE_URL = 'https://risingayodhya.com/Urvarak/backend';
 
 /**
@@ -25,6 +27,7 @@ export const API_ENDPOINTS = {
     checkFarmerStatus: `${API_BASE_URL}/check_farmer_status.php`,
     loginFarmer: `${API_BASE_URL}/login_farmer.php`,
     sendOtp: `${API_BASE_URL}/send_otp.php`,
+    sendRegistrationOtp: `${API_BASE_URL}/send_registration_otp.php`,
     verifyOtp: `${API_BASE_URL}/verify_otp.php`,
     getDistricts: `${API_BASE_URL}/get_districts.php`,
     getLocations: `${API_BASE_URL}/get_locations.php`,

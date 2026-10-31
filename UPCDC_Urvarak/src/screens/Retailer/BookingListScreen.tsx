@@ -21,6 +21,7 @@ import { COLORS, SPACING, SHADOWS } from '../../constants';
 import { API_ENDPOINTS, API_BASE_URL } from '../../config/config';
 import { RetailerLogger } from '../../utils/RetailerLogger';
 import AlertModal from '../../components/AlertModal';
+import ReasonModal from '../../components/ReasonModal';
 
 const { width } = Dimensions.get('window');
 
@@ -65,6 +66,12 @@ export default function BookingListScreen({ retailerId, retailerDetails, onBack 
     const [alertModal, setAlertModal] = useState<{
         visible: boolean, type: 'success' | 'error' | 'info', title: string, message: string
     }>({ visible: false, type: 'info', title: '', message: '' });
+    const [cancelModal, setCancelModal] = useState<{
+        visible: boolean, data: any, reason: string
+    }>({ visible: false, data: null, reason: '' });
+    const [extendModal, setExtendModal] = useState<{
+        visible: boolean, item: any, newDate: string, reason: string
+    }>({ visible: false, item: null, newDate: '', reason: '' });
     const insets = useSafeAreaInsets();
 
     // Memoized Calendar Days for main calendar
@@ -235,6 +242,52 @@ export default function BookingListScreen({ retailerId, retailerDetails, onBack 
         }
     };
 
+    const submitCancel = async (reasonText?: string) => {
+        if (!cancelModal.data) return;
+        const finalReason = (reasonText !== undefined ? reasonText : cancelModal.reason).trim();
+        if (!finalReason) {
+            setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: 'कृपया बुकिंग रद्द करने का कारण लिखें या चुनें' });
+            return;
+        }
+        const itemToCancel = cancelModal.data;
+        setCancelModal({ visible: false, data: null, reason: '' });
+
+        handleAction(
+            API_ENDPOINTS.manageBooking,
+            {
+                booking_id: itemToCancel.id,
+                action: 'cancel',
+                retailer_id: retailerId,
+                cancellation_reason: finalReason
+            },
+            'बुकिंग सफलतापूर्वक रद्द कर दी गई है'
+        );
+    };
+
+    const submitExtend = async (reasonText: string) => {
+        if (!extendModal.item || !extendModal.newDate) return;
+        const finalReason = reasonText.trim();
+        if (!finalReason) {
+            setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: 'कृपया तारीख बढ़ाने का सटीक कारण दर्ज करें' });
+            return;
+        }
+        const itemToExtend = extendModal.item;
+        const newDate = extendModal.newDate;
+        setExtendModal({ visible: false, item: null, newDate: '', reason: '' });
+
+        handleAction(
+            API_ENDPOINTS.manageBooking,
+            {
+                booking_id: itemToExtend.id,
+                action: 'extend',
+                retailer_id: retailerId,
+                new_date: newDate,
+                extension_reason: finalReason
+            },
+            `बुकिंग की तारीख ${formatToHindiDate(newDate)} तक बढ़ा दी गई है`
+        );
+    };
+
     const updateQuantity = (itemId: string, originalQty: number, delta: number) => {
         const currentModified = modifiedQuantities[itemId] ?? originalQty;
         const newQty = Math.max(0, currentModified + delta);
@@ -327,9 +380,12 @@ export default function BookingListScreen({ retailerId, retailerDetails, onBack 
                                     onPress={() => {
                                         if (item.date && !item.isPast) {
                                             setSelectedExtensionDate(item.date);
-                                            showConfirm('अनुरोध की पुष्टि', `क्या आप बुकिंग की तारीख ${item.date} तक बढ़ाने की पुष्टि करना चाहते हैं?`, () => {
-                                                setShowExtensionCalendar(false);
-                                                handleAction(API_ENDPOINTS.manageBooking, { booking_id: extendingItem.id, action: 'extend', retailer_id: retailerId, new_date: item.date }, `बुकिंग की तारीख ${item.date} तक बढ़ा दी गई है`);
+                                            setShowExtensionCalendar(false);
+                                            setExtendModal({
+                                                visible: true,
+                                                item: extendingItem,
+                                                newDate: item.date,
+                                                reason: '',
                                             });
                                         }
                                     }}
@@ -461,9 +517,12 @@ export default function BookingListScreen({ retailerId, retailerDetails, onBack 
                             </View>
                             {!!item.registry_id && (
                                 <Text style={[styles.farmerDetail, { marginTop: 4, fontWeight: '700', color: COLORS.primary }]}>
-                                    पंजीकरण सं: {item.registry_id}
+                                    रजिस्ट्री आईडी: {item.registry_id}
                                 </Text>
                             )}
+                            <Text style={[styles.farmerDetail, { marginTop: 2, fontWeight: '700', color: (item.kisan_panjikaran_number || item.kisan_code) ? '#15803D' : '#DC2626' }]}>
+                                कृषक पंजिका कोड: {(item.kisan_panjikaran_number || item.kisan_code) ? (item.kisan_panjikaran_number || item.kisan_code) : 'उपलब्ध नहीं'}
+                            </Text>
                         </View>
                     </View>
                 </View>
@@ -506,6 +565,22 @@ export default function BookingListScreen({ retailerId, retailerDetails, onBack 
                             <Ionicons name="alert-circle" size={15} color="#DC2626" />
                             <Text style={styles.queueWarningBadgeText}>
                                 कतार नियम: पिछले किसान की तारीख {formatToHindiDate(item.highestPrecedingDate)} है। तारीख बढ़ाना आवश्यक है।
+                            </Text>
+                        </View>
+                    )}
+                    {item.status?.toLowerCase() === 'cancelled' && (
+                        <View style={styles.cancelledDetailRow}>
+                            <Ionicons name="information-circle-outline" size={15} color={COLORS.error} />
+                            <Text style={styles.cancelledDetailText}>
+                                रद्द करने का कारण: {item.cancellation_reason || (item.cancelled_by === 'SYSTEM_AUTO' ? 'सिस्टम द्वारा स्वतः रद्द' : 'दुकानदार द्वारा रद्द किया गया')}
+                            </Text>
+                        </View>
+                    )}
+                    {item.status?.toLowerCase() === 'extended' && (
+                        <View style={styles.extendedDetailRow}>
+                            <Ionicons name="calendar-outline" size={15} color="#D97706" />
+                            <Text style={styles.extendedDetailText}>
+                                तारीख बढ़ाने का कारण: {item.extension_reason || 'दुकानदार द्वारा तारीख बढ़ाई गई'}
                             </Text>
                         </View>
                     )}
@@ -569,7 +644,13 @@ export default function BookingListScreen({ retailerId, retailerDetails, onBack 
 
                         {isPending && (
                             <View style={[styles.threeActionRow, { marginTop: 12 }]}>
-                                <TouchableOpacity style={[styles.actionBtn3, styles.cancelBtn]} onPress={(e) => { e.stopPropagation(); showConfirm('बुकिंग रद्द करें', 'क्या आप वाकई इस बुकिंग को रद्द करना चाहते हैं?', () => handleAction(API_ENDPOINTS.manageBooking, { booking_id: item.id, action: 'cancel', retailer_id: retailerId }, 'बुकिंग रद्द कर दी गई है')); }}>
+                                <TouchableOpacity 
+                                    style={[styles.actionBtn3, styles.cancelBtn]} 
+                                    onPress={(e) => { 
+                                        e.stopPropagation(); 
+                                        setCancelModal({ visible: true, data: item, reason: '' }); 
+                                    }}
+                                >
                                     <MaterialCommunityIcons name="close-circle-outline" size={18} color={COLORS.error} />
                                     <Text style={[styles.btnText3, { color: COLORS.error }]}>रद्द करें</Text>
                                 </TouchableOpacity>
@@ -764,11 +845,11 @@ export default function BookingListScreen({ retailerId, retailerDetails, onBack 
             <FlatList
                 data={sortedList}
                 renderItem={renderItem}
-                keyExtractor={(item, idx) => item.order_id || item.id || idx.toString()}
+                keyExtractor={(item, idx) => String(item.order_id || item.id || `booking-${idx}`)}
                 contentContainerStyle={styles.scrollContent}
                 style={{ flex: 1 }}
                 refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchBookings(true)} colors={[COLORS.primary]} />}
-                removeClippedSubviews={true}
+                removeClippedSubviews={false}
                 maxToRenderPerBatch={10}
                 initialNumToRender={8}
                 ListEmptyComponent={
@@ -785,13 +866,39 @@ export default function BookingListScreen({ retailerId, retailerDetails, onBack 
 
             {/* Overlay Loading for background updates (only if absolutely necessary, but usually RefreshControl is enough) */}
             {loading && (
-                <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255,255,255,0.4)', justifyContent: 'center', alignItems: 'center', zIndex: 100 }]}>
+                <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255,255,255,0.4)', justifyContent: 'center', alignItems: 'center', elevation: 5, zIndex: 10 }]}>
                     <ActivityIndicator size="large" color={COLORS.primary} />
                 </View>
             )}
 
             {renderExtensionCalendarModal()}
             {renderCustomConfirmModal()}
+            <ReasonModal
+                visible={cancelModal.visible}
+                title="बुकिंग रद्द करने का कारण"
+                subtitle={cancelModal.data ? `किसान: ${cancelModal.data.full_name || ''} (ऑर्डर: ${cancelModal.data.order_id || ''})` : 'कृपया सटीक कारण बताएं:'}
+                placeholder="बुकिंग रद्द करने का सटीक कारण विस्तार से लिखें..."
+                confirmText="बुकिंग रद्द करें"
+                cancelText="वापस जाएं"
+                confirmColor={COLORS.error}
+                iconName="close-circle-outline"
+                loading={loading}
+                onConfirm={(reason) => submitCancel(reason)}
+                onCancel={() => setCancelModal({ visible: false, data: null, reason: '' })}
+            />
+            <ReasonModal
+                visible={extendModal.visible}
+                title="तारीख बढ़ाने का कारण"
+                subtitle={extendModal.newDate ? `नई तारीख (${formatToHindiDate(extendModal.newDate)}) के लिए सटीक कारण दर्ज करें:` : 'कृपया कारण दर्ज करें:'}
+                placeholder="तारीख बढ़ाने का सटीक कारण विस्तार से लिखें (जैसे: स्टॉक आपूर्ति में देरी, अवकाश आदि)..."
+                confirmText="तारीख बढ़ाएं"
+                cancelText="वापस जाएं"
+                confirmColor="#D97706"
+                iconName="calendar-outline"
+                loading={loading}
+                onConfirm={(reason) => submitExtend(reason)}
+                onCancel={() => setExtendModal({ visible: false, item: null, newDate: '', reason: '' })}
+            />
             <AlertModal
                 visible={alertModal.visible}
                 type={alertModal.type}
@@ -1198,6 +1305,42 @@ const styles = StyleSheet.create({
     queueWarningBadgeText: {
         fontSize: 11,
         color: '#DC2626',
+        fontWeight: '700',
+        flex: 1,
+    },
+    cancelledDetailRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#FEF2F2',
+        borderWidth: 1,
+        borderColor: '#FECACA',
+        borderRadius: 8,
+        paddingHorizontal: 8,
+        paddingVertical: 5,
+        marginTop: 6,
+        gap: 6,
+    },
+    cancelledDetailText: {
+        fontSize: 12,
+        color: '#B91C1C',
+        fontWeight: '700',
+        flex: 1,
+    },
+    extendedDetailRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#FFFBEB',
+        borderWidth: 1,
+        borderColor: '#FDE68A',
+        borderRadius: 8,
+        paddingHorizontal: 8,
+        paddingVertical: 5,
+        marginTop: 6,
+        gap: 6,
+    },
+    extendedDetailText: {
+        fontSize: 12,
+        color: '#B45309',
         fontWeight: '700',
         flex: 1,
     },

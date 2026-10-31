@@ -1,6 +1,7 @@
 import { apiFetch } from '../../utils/apiClient';
 import { getTodayDateString, isDateMatch, formatToHindiDate, parseMixedDateFormat } from '../../utils/dateUtils';
 import { RetailerLogger } from '../../utils/RetailerLogger';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     View,
@@ -24,8 +25,9 @@ import { COLORS, SPACING, SHADOWS } from '../../constants';
 import { API_ENDPOINTS, API_BASE_URL } from '../../config/config';
 import AlertModal from '../../components/AlertModal';
 import ConfirmModal from '../../components/ConfirmModal';
+import ReasonModal from '../../components/ReasonModal';
 import DocumentViewerModal from '../../components/DocumentViewerModal';
-import { pickFromCamera, pickFromGallery, pickDocumentFile, PickedMedia } from '../../utils/mediaPickerUtils';
+import { pickFromCamera, pickFromGallery, pickDocumentFile, PickedMedia, ensureCameraPermission } from '../../utils/mediaPickerUtils';
 const { width, height } = Dimensions.get('window');
 
 interface RegistrationListScreenProps {
@@ -67,20 +69,42 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
         visible: boolean, title: string, message: string, onConfirm: () => void
     }>({ visible: false, title: '', message: '', onConfirm: () => { } });
     const [alertModal, setAlertModal] = useState<{
-        visible: boolean, type: 'success' | 'error' | 'info', title: string, message: string
+        visible: boolean, type: 'success' | 'error' | 'info' | 'warning', title: string, message: string, buttons?: any[]
     }>({ visible: false, type: 'info', title: '', message: '' });
 
     // Edit Farmer state
     const [editModal, setEditModal] = useState<{ visible: boolean, data: any }>({ visible: false, data: null });
-    const [editFields, setEditFields] = useState({ name: '', phone: '', aadhaar: '', khatauni_no: '', land_acres: '' });
+    const [editFields, setEditFields] = useState({ name: '', phone: '', aadhaar: '', khatauni_no: '', land_acres: '', registry_id: '', kisan_panjikaran_number: '' });
     const [editMedia, setEditMedia] = useState<{
         photo: PickedMedia | null;
         aadhaar: PickedMedia | null;
         khatauni: PickedMedia[];
-    }>({ photo: null, aadhaar: null, khatauni: [] });
+        kisan_panjikaran: PickedMedia[];
+    }>({ photo: null, aadhaar: null, khatauni: [], kisan_panjikaran: [] });
 
     // Reject Reason state
     const [rejectModal, setRejectModal] = useState<{ visible: boolean, data: any, reason: string }>({ visible: false, data: null, reason: '' });
+
+    const effectiveRetailerId = retailerId || retailerDetails?.retailer_id || retailerDetails?.id || '';
+    const CACHE_KEY = `@retailer_registrations_${effectiveRetailerId || 'default'}`;
+
+    // Instant Cache Loading (0ms load on opening screen)
+    useEffect(() => {
+        let isMounted = true;
+        AsyncStorage.getItem(CACHE_KEY).then((cached) => {
+            if (cached && isMounted) {
+                try {
+                    const parsed = JSON.parse(cached);
+                    if (parsed && (parsed.pending?.length || parsed.approved?.length || parsed.rejected?.length)) {
+                        setRegistrations(parsed);
+                        registrationsRef.current = parsed;
+                    }
+                } catch (_) {}
+            }
+        }).catch(() => {});
+
+        return () => { isMounted = false; };
+    }, [CACHE_KEY]);
 
     const fetchRegistrations = useCallback(async (isRefresh = false, isSilent = false, activeFlag = { active: true }) => {
         try {
@@ -105,7 +129,10 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
             const result = await response.json();
             if (!activeFlag.active) return;
             if (result.status === 'success') {
-                setRegistrations(result.data.registrations || { pending: [], approved: [], rejected: [] });
+                const regData = result.data.registrations || { pending: [], approved: [], rejected: [] };
+                setRegistrations(regData);
+                registrationsRef.current = regData;
+                AsyncStorage.setItem(CACHE_KEY, JSON.stringify(regData)).catch(() => {});
             }
         } catch (error) {
             console.error('Fetch registrations failed', error);
@@ -115,7 +142,7 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
                 setRefreshing(false);
             }
         }
-    }, [retailerId, retailerDetails]);
+    }, [retailerId, retailerDetails, CACHE_KEY]);
 
     useEffect(() => {
         let active = true;
@@ -133,40 +160,72 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
         };
     }, [retailerId, fetchRegistrations]);
 
-    const handleAction = async (endpoint: string, body: Record<string, any>, successMsg: string, confirmTitle: string, confirmMsg: string) => {
+    const handleAction = async (endpoint: string, body: Record<string, any>, successMsg: string, confirmTitle?: string, confirmMsg?: string) => {
         const effectiveId = retailerId || retailerDetails?.retailer_id || retailerDetails?.id || 'UNKNOWN';
-        setConfirmModal({
-            visible: true,
-            title: confirmTitle,
-            message: confirmMsg,
-            onConfirm: async () => {
-                try {
-                    setLoading(true);
-                    RetailerLogger.apiReq(endpoint, 'POST', body, effectiveId);
+        const executeAction = async () => {
+            try {
+                setLoading(true);
+                RetailerLogger.apiReq(endpoint, 'POST', body, effectiveId);
 
-                    const response = await apiFetch(endpoint, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(body)
-                    });
-                    const result = await response.json();
+                const response = await apiFetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const result = await response.json();
 
-                    RetailerLogger.apiRes(endpoint, response.status, result, effectiveId);
+                RetailerLogger.apiRes(endpoint, response.status, result, effectiveId);
 
-                    if (result.status === 'success') {
-                        setAlertModal({ visible: true, type: 'success', title: 'सफल', message: successMsg });
-                        fetchRegistrations();
-                    } else {
-                        setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: result.message || 'कुछ गलत हो गया' });
-                    }
-                } catch (error) {
-                    console.error('Action failed', error);
-                    RetailerLogger.apiErr(endpoint, 0, error, effectiveId);
-                    setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: 'नेटवर्क त्रुटि' });
-                } finally {
-                    setLoading(false);
+                if (result.status === 'success') {
+                    setAlertModal({ visible: true, type: 'success', title: 'सफल', message: successMsg });
+                    fetchRegistrations();
+                } else {
+                    setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: result.message || 'कुछ गलत हो गया' });
                 }
+            } catch (error) {
+                console.error('Action failed', error);
+                RetailerLogger.apiErr(endpoint, 0, error, effectiveId);
+                setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: 'नेटवर्क त्रुटि' });
+            } finally {
+                setLoading(false);
             }
+        };
+
+        if (confirmTitle && confirmMsg) {
+            setConfirmModal({
+                visible: true,
+                title: confirmTitle,
+                message: confirmMsg,
+                onConfirm: executeAction
+            });
+        } else {
+            await executeAction();
+        }
+    };
+
+    const showPermissionRequiredAlert = (mediaType: 'camera' | 'gallery') => {
+        setAlertModal({
+            visible: true,
+            type: 'warning',
+            title: mediaType === 'camera' ? 'कैमरा अनुमति आवश्यक है 📷' : 'गैलरी अनुमति आवश्यक है 🖼️',
+            message: mediaType === 'camera'
+                ? 'किसान की फोटो खींचने के लिए ऐप को कैमरे की अनुमति की आवश्यकता है। कृपया सेटिंग्स में जाकर अनुमति (Allow) दें।'
+                : 'फोटो चुनने के लिए ऐप को गैलरी उपयोग की अनुमति की आवश्यकता है। कृपया सेटिंग्स में जाकर अनुमति (Allow) दें।',
+            buttons: [
+                {
+                    text: 'रद्द करें',
+                    style: 'cancel',
+                    onPress: () => setAlertModal(prev => ({ ...prev, visible: false, buttons: undefined }))
+                },
+                {
+                    text: 'अनुमति दें (सेटिंग्स)',
+                    style: 'primary',
+                    onPress: () => {
+                        setAlertModal(prev => ({ ...prev, visible: false, buttons: undefined }));
+                        Linking.openSettings().catch(() => {});
+                    }
+                }
+            ]
         });
     };
 
@@ -174,12 +233,14 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
         if (source === 'camera') {
             pickFromCamera(
                 (media) => setEditMedia(prev => ({ ...prev, photo: media })),
-                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg })
+                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg, buttons: undefined }),
+                () => showPermissionRequiredAlert('camera')
             );
         } else {
             pickFromGallery(
                 (media) => setEditMedia(prev => ({ ...prev, photo: media })),
-                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg })
+                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg, buttons: undefined }),
+                () => showPermissionRequiredAlert('gallery')
             );
         }
     };
@@ -188,17 +249,19 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
         if (type === 'camera') {
             pickFromCamera(
                 (media) => setEditMedia(prev => ({ ...prev, aadhaar: media })),
-                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg })
+                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg, buttons: undefined }),
+                () => showPermissionRequiredAlert('camera')
             );
         } else if (type === 'gallery') {
             pickFromGallery(
                 (media) => setEditMedia(prev => ({ ...prev, aadhaar: media })),
-                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg })
+                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg, buttons: undefined }),
+                () => showPermissionRequiredAlert('gallery')
             );
         } else {
             pickDocumentFile(
                 (media) => setEditMedia(prev => ({ ...prev, aadhaar: media })),
-                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg })
+                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg, buttons: undefined })
             );
         }
     };
@@ -207,23 +270,55 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
         if (type === 'camera') {
             pickFromCamera(
                 (media) => setEditMedia(prev => ({ ...prev, khatauni: [...prev.khatauni, media] })),
-                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg })
+                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg, buttons: undefined }),
+                () => showPermissionRequiredAlert('camera')
             );
         } else if (type === 'gallery') {
             pickFromGallery(
                 (media) => setEditMedia(prev => ({ ...prev, khatauni: [...prev.khatauni, media] })),
-                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg })
+                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg, buttons: undefined }),
+                () => showPermissionRequiredAlert('gallery')
             );
         } else {
             pickDocumentFile(
                 (media) => setEditMedia(prev => ({ ...prev, khatauni: [...prev.khatauni, media] })),
-                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg })
+                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg, buttons: undefined })
+            );
+        }
+    };
+
+    const handlePickKisanPanjikaran = (type: 'camera' | 'gallery' | 'pdf') => {
+        if (type === 'camera') {
+            pickFromCamera(
+                (media) => setEditMedia(prev => ({ ...prev, kisan_panjikaran: [...prev.kisan_panjikaran, media] })),
+                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg, buttons: undefined }),
+                () => showPermissionRequiredAlert('camera')
+            );
+        } else if (type === 'gallery') {
+            pickFromGallery(
+                (media) => setEditMedia(prev => ({ ...prev, kisan_panjikaran: [...prev.kisan_panjikaran, media] })),
+                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg, buttons: undefined }),
+                () => showPermissionRequiredAlert('gallery')
+            );
+        } else {
+            pickDocumentFile(
+                (media) => setEditMedia(prev => ({ ...prev, kisan_panjikaran: [...prev.kisan_panjikaran, media] })),
+                (msg) => setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: msg, buttons: undefined })
             );
         }
     };
 
     const handleUpdateFarmer = async () => {
         if (!editModal.data) return;
+        const landVal = parseFloat(editFields.land_acres);
+        if (isNaN(landVal) || landVal <= 0) {
+            setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: 'कृपया वैध जमीन का क्षेत्रफल (हेक्टेयर) दर्ज करें।' });
+            return;
+        }
+        if (landVal > 1000 || String(editFields.land_acres).trim().length >= 10) {
+            setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: 'जमीन का क्षेत्रफल अधिकतम 1000 हेक्टेयर हो सकता है। मोबाइल नंबर दर्ज न करें।' });
+            return;
+        }
         const effectiveId = retailerId || retailerDetails?.retailer_id || retailerDetails?.id || 'UNKNOWN';
         try {
             setLoading(true);
@@ -233,7 +328,9 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
             formData.append('mobile', editFields.phone);
             formData.append('aadhaar', editFields.aadhaar);
             formData.append('khatauni_number', editFields.khatauni_no);
-            formData.append('khasra_rukba', String(parseFloat(editFields.land_acres) || 0));
+            formData.append('khasra_rukba', String(Number(landVal.toFixed(4))));
+            formData.append('registry_id', editFields.registry_id);
+            formData.append('kisan_panjikaran_number', editFields.kisan_panjikaran_number);
 
             if (editMedia.photo) {
                 formData.append('farmer_photo', {
@@ -261,11 +358,22 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
                 });
             }
 
+            if (editMedia.kisan_panjikaran.length > 0) {
+                editMedia.kisan_panjikaran.forEach((kp) => {
+                    formData.append('kisan_panjikaran_photo[]', {
+                        uri: kp.uri,
+                        name: kp.name,
+                        type: kp.type,
+                    } as any);
+                });
+            }
+
             RetailerLogger.apiReq(API_ENDPOINTS.updateFarmer, 'POST', {
                 farmer_id: editModal.data.id,
                 photoUpdated: !!editMedia.photo,
                 aadhaarUpdated: !!editMedia.aadhaar,
-                khatauniCount: editMedia.khatauni.length
+                khatauniCount: editMedia.khatauni.length,
+                kisanPanjikaranCount: editMedia.kisan_panjikaran.length
             }, effectiveId);
 
             const response = await apiFetch(API_ENDPOINTS.updateFarmer, {
@@ -291,20 +399,19 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
         }
     };
 
-    const submitReject = async () => {
+    const submitReject = async (reasonText?: string) => {
         if (!rejectModal.data) return;
-        if (!rejectModal.reason.trim()) {
+        const finalReason = (reasonText !== undefined ? reasonText : rejectModal.reason).trim();
+        if (!finalReason) {
             setAlertModal({ visible: true, type: 'error', title: 'त्रुटि', message: 'कृपया अस्वीकार करने का कारण लिखें' });
             return;
         }
-        setRejectModal({ ...rejectModal, visible: false });
-        
+        setRejectModal({ visible: false, data: null, reason: '' });
+
         handleAction(
             API_ENDPOINTS.manageRegistration,
-            { request_id: rejectModal.data.id, action: 'reject', retailer_id: retailerId, rejection_reason: rejectModal.reason.trim() },
-            'किसान को अस्वीकार कर दिया गया है',
-            'अस्वीकार करें?',
-            'क्या आप वाकई इस किसान के पंजीकरण को अस्वीकार करना चाहते हैं?'
+            { request_id: rejectModal.data.id, action: 'reject', retailer_id: retailerId, rejection_reason: finalReason },
+            'किसान का आवेदन अस्वीकार कर दिया गया है'
         );
     };
 
@@ -409,42 +516,33 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
             return;
         }
 
+        // Pre-request camera permission immediately so it stays active
+        ensureCameraPermission(false).catch(() => {});
+
         setEditFields({
             name: item.name,
             phone: item.phone,
             aadhaar: item.aadhaar || '',
             khatauni_no: item.khatauni_no || '',
-            land_acres: String(item.land_acres || '0')
+            land_acres: String(item.land_acres || '0'),
+            registry_id: item.registry_id || '',
+            kisan_panjikaran_number: item.kisan_panjikaran_number || ''
         });
         setEditMedia({
             photo: null,
             aadhaar: null,
-            khatauni: []
+            khatauni: [],
+            kisan_panjikaran: []
         });
         setEditModal({ visible: true, data: item });
     };
 
-    const renderRegistrationCard = (item: any, index?: number) => {
-        const isLocked = regTab === 'pending' && typeof index === 'number' && index > 0;
-
+    const renderRegistrationCard = (item: any) => {
         return (
             <View
-                style={[
-                    styles.card
-                ]}
+                style={styles.card}
                 key={item.id}
-                pointerEvents={isLocked ? 'none' : 'auto'}
             >
-                {isLocked && (
-                    <BlurView intensity={30} tint="light" style={styles.lockOverlay}>
-                        <View style={styles.lockIconCircle}>
-                            <MaterialCommunityIcons name="lock" size={28} color={COLORS.primary} />
-                        </View>
-                        <View style={styles.lockTextContainer}>
-                            <Text style={styles.lockText}>पुराने अनुरोध को पहले पूरा करें</Text>
-                        </View>
-                    </BlurView>
-                )}
                 <View style={styles.cardHeader}>
                     <View style={styles.farmerInfo}>
                         <TouchableOpacity
@@ -460,7 +558,8 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
                                     source={{
                                         uri: (item.photo || item.farmer_photo || item.profile_photo).startsWith('http')
                                             ? (item.photo || item.farmer_photo || item.profile_photo)
-                                            : `${API_BASE_URL}/${item.photo || item.farmer_photo || item.profile_photo}`
+                                            : `${API_BASE_URL}/${item.photo || item.farmer_photo || item.profile_photo}`,
+                                        cache: 'force-cache'
                                     }}
                                     style={styles.avatarImage}
                                     resizeMode="cover"
@@ -478,9 +577,12 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
                             </View>
                             {!!item.registry_id && (
                                 <Text style={[styles.farmerDetail, { marginTop: 4, fontWeight: '700', color: COLORS.primary }]}>
-                                    पंजीकरण सं: {item.registry_id}
+                                    रजिस्ट्री आईडी: {item.registry_id}
                                 </Text>
                             )}
+                            <Text style={[styles.farmerDetail, { marginTop: 2, fontWeight: '700', color: (item.kisan_panjikaran_number || item.kisan_code) ? '#15803D' : '#DC2626' }]}>
+                                कृषक पंजिका कोड: {(item.kisan_panjikaran_number || item.kisan_code) ? (item.kisan_panjikaran_number || item.kisan_code) : 'उपलब्ध नहीं'}
+                            </Text>
                         </View>
                         {item.status === 0 && (
                             <TouchableOpacity style={styles.editBtn} onPress={() => startEdit(item)}>
@@ -510,6 +612,15 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
                         <MaterialCommunityIcons name="file-document-outline" size={18} color={COLORS.primary} />
                         <Text style={styles.docButtonText}>खतौनी कॉपी</Text>
                     </TouchableOpacity>
+                    {!!item.kisan_panjikaran_photo && (
+                        <TouchableOpacity
+                            style={[styles.docButton, { backgroundColor: '#F0FDF4' }]}
+                            onPress={() => openDocument(item.kisan_panjikaran_photo, 'किसान पंजीकरण पर्ची', item.name)}
+                        >
+                            <MaterialCommunityIcons name="receipt-text-outline" size={18} color="#15803D" />
+                            <Text style={[styles.docButtonText, { color: '#15803D' }]}>पंजीकरण पर्ची</Text>
+                        </TouchableOpacity>
+                    )}
                     {(item.photo || item.farmer_photo || item.profile_photo) && (
                         <TouchableOpacity
                             style={[styles.docButton, { backgroundColor: '#FFF7ED' }]}
@@ -533,10 +644,22 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
                     </View>
                 )}
 
-                {item.status === 2 && item.approved_at && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 15 }}>
-                        <MaterialCommunityIcons name="close-circle-outline" size={14} color={COLORS.error} />
-                        <Text style={{ fontSize: 12, color: COLORS.error, fontWeight: '700' }}>अस्वीकृत: {item.approved_at}</Text>
+                {item.status === 2 && (
+                    <View style={{ marginBottom: 12 }}>
+                        {item.approved_at && (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 6 }}>
+                                <MaterialCommunityIcons name="close-circle-outline" size={14} color={COLORS.error} />
+                                <Text style={{ fontSize: 12, color: COLORS.error, fontWeight: '700' }}>अस्वीकृत: {item.approved_at}</Text>
+                            </View>
+                        )}
+                        {!!item.rejection_reason && (
+                            <View style={styles.rejectionReasonBox}>
+                                <Ionicons name="information-circle-outline" size={15} color={COLORS.error} />
+                                <Text style={styles.rejectionReasonText} numberOfLines={2}>
+                                    कारण: {item.rejection_reason}
+                                </Text>
+                            </View>
+                        )}
                     </View>
                 )}
 
@@ -577,20 +700,24 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
             </View>
         );
     };
-    const filteredPending = filterListByDate(registrations.pending).sort((a, b) => {
-        const parsedA = parseMixedDateFormat(a.created_at) || new Date(a.created_at?.replace(/-/g, '/') || 0);
-        const parsedB = parseMixedDateFormat(b.created_at) || new Date(b.created_at?.replace(/-/g, '/') || 0);
-        let dateA = parsedA.getTime();
-        let dateB = parsedB.getTime();
-        if (isNaN(dateA)) dateA = 0;
-        if (isNaN(dateB)) dateB = 0;
-        if (dateA === dateB) {
-            return parseInt(a.id || '0', 10) - parseInt(b.id || '0', 10);
-        }
-        return dateA - dateB;
-    });
-    const filteredApproved = filterListByDate(registrations.approved);
-    const filteredRejected = filterListByDate(registrations.rejected);
+    const sortRecentFirst = (list: any[]) => {
+        return [...list].sort((a, b) => {
+            const parsedA = parseMixedDateFormat(a.created_at) || new Date(a.created_at?.replace(/-/g, '/') || 0);
+            const parsedB = parseMixedDateFormat(b.created_at) || new Date(b.created_at?.replace(/-/g, '/') || 0);
+            let dateA = parsedA.getTime();
+            let dateB = parsedB.getTime();
+            if (isNaN(dateA)) dateA = 0;
+            if (isNaN(dateB)) dateB = 0;
+            if (dateA === dateB) {
+                return parseInt(b.id || '0', 10) - parseInt(a.id || '0', 10);
+            }
+            return dateB - dateA; // Most recent first
+        });
+    };
+
+    const filteredPending = sortRecentFirst(filterListByDate(registrations.pending));
+    const filteredApproved = sortRecentFirst(filterListByDate(registrations.approved));
+    const filteredRejected = sortRecentFirst(filterListByDate(registrations.rejected));
 
     let listToShow = [];
     if (regTab === 'pending') listToShow = filteredPending;
@@ -635,10 +762,10 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
             ) : (
                 <FlatList
                     data={listToShow}
-                    renderItem={({ item, index }) => renderRegistrationCard(item, index)}
-                    keyExtractor={(item) => (item.id || Math.random()).toString()}
+                    renderItem={({ item }) => renderRegistrationCard(item)}
+                    keyExtractor={(item, index) => String(item.id || item.farmer_id || item.mobile || `reg-${index}`)}
                     contentContainerStyle={styles.scrollContent}
-                    removeClippedSubviews={true}
+                    removeClippedSubviews={false}
                     maxToRenderPerBatch={10}
                     updateCellsBatchingPeriod={50}
                     initialNumToRender={8}
@@ -841,6 +968,58 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
                                 </View>
                             </View>
 
+                            {/* Section: Kisan Panjikaran Slip */}
+                            <Text style={styles.mediaSectionTitle}>
+                                <MaterialCommunityIcons name="receipt-text-outline" size={18} color={COLORS.primary} /> किसान पंजीकरण पर्ची (Kisan Panjikaran Slip)
+                            </Text>
+                            <View style={styles.mediaCard}>
+                                <View style={styles.mediaCardHeader}>
+                                    <Text style={{ fontSize: 12, color: '#64748b', fontWeight: '600' }}>
+                                        {editModal.data?.kisan_panjikaran_photo ? 'वर्तमान पर्ची मौजूद है' : 'कोई पर्ची अपलोड नहीं है'}
+                                    </Text>
+                                    {!!editModal.data?.kisan_panjikaran_photo && (
+                                        <TouchableOpacity
+                                            style={styles.viewCurrentBtn}
+                                            onPress={() => openDocument(editModal.data.kisan_panjikaran_photo, 'किसान पंजीकरण पर्ची', editModal.data.name)}
+                                        >
+                                            <Ionicons name="eye-outline" size={14} color={COLORS.primary} />
+                                            <Text style={styles.viewCurrentBtnText}>वर्तमान देखें</Text>
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+                                {editMedia.kisan_panjikaran.map((kpItem, idx) => (
+                                    <View key={idx} style={[styles.mediaSelectedTag, { marginBottom: 4 }]}>
+                                        <Ionicons name={kpItem.isPdf ? "document-text" : "image"} size={16} color="#059669" />
+                                        <Text style={styles.mediaSelectedText} numberOfLines={1}>
+                                            नयी पर्ची ({idx + 1}): {kpItem.name}
+                                        </Text>
+                                        <TouchableOpacity
+                                            onPress={() => setEditMedia(prev => ({
+                                                ...prev,
+                                                kisan_panjikaran: prev.kisan_panjikaran.filter((_, i) => i !== idx)
+                                            }))}
+                                            style={styles.removeMediaBtn}
+                                        >
+                                            <Ionicons name="close" size={14} color={COLORS.error} />
+                                        </TouchableOpacity>
+                                    </View>
+                                ))}
+                                <View style={styles.mediaBtnRow}>
+                                    <TouchableOpacity style={styles.mediaActionBtn} onPress={() => handlePickKisanPanjikaran('camera')}>
+                                        <Ionicons name="camera-outline" size={15} color={COLORS.primary} />
+                                        <Text style={styles.mediaActionBtnText}>कैमरा</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity style={styles.mediaActionBtn} onPress={() => handlePickKisanPanjikaran('gallery')}>
+                                        <Ionicons name="images-outline" size={15} color={COLORS.primary} />
+                                        <Text style={styles.mediaActionBtnText}>गैलरी</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity style={styles.mediaActionBtn} onPress={() => handlePickKisanPanjikaran('pdf')}>
+                                        <MaterialCommunityIcons name="file-pdf-box" size={16} color="#DC2626" />
+                                        <Text style={styles.mediaActionBtnText}>PDF फ़ाइल</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+
                             {/* Farmer Details Fields */}
                             <Text style={[styles.mediaSectionTitle, { marginTop: 20 }]}>
                                 <Ionicons name="person-outline" size={17} color={COLORS.primary} /> किसान विवरण
@@ -855,11 +1034,30 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
                             <Text style={styles.inputLabel}>आधार नंबर</Text>
                             <TextInput style={styles.input} value={editFields.aadhaar} onChangeText={(t) => setEditFields({ ...editFields, aadhaar: t })} keyboardType="numeric" maxLength={12} />
 
+                            <Text style={styles.inputLabel}>रजिस्ट्री आईडी</Text>
+                            <TextInput style={styles.input} value={editFields.registry_id} onChangeText={(t) => setEditFields({ ...editFields, registry_id: t })} placeholder="रजिस्ट्री आईडी" />
+
+                            <Text style={styles.inputLabel}>कृषक पंजिका कोड (10 अंक - अनिवार्य)</Text>
+                            <TextInput
+                                style={styles.input}
+                                value={editFields.kisan_panjikaran_number}
+                                onChangeText={(t) => setEditFields({ ...editFields, kisan_panjikaran_number: t.replace(/[^0-9]/g, '') })}
+                                placeholder="10 अंकों का कृषक पंजिका कोड दर्ज करें"
+                                keyboardType="numeric"
+                                maxLength={10}
+                            />
+
                             <Text style={styles.inputLabel}>खतौनी नंबर</Text>
                             <TextInput style={styles.input} value={editFields.khatauni_no} onChangeText={(t) => setEditFields({ ...editFields, khatauni_no: t })} />
 
                             <Text style={styles.inputLabel}>जमीन (हेक्टेयर में)</Text>
-                            <TextInput style={styles.input} value={editFields.land_acres} onChangeText={(t) => setEditFields({ ...editFields, land_acres: t })} keyboardType="numeric" />
+                            <TextInput
+                                style={styles.input}
+                                value={editFields.land_acres}
+                                onChangeText={(t) => setEditFields({ ...editFields, land_acres: t.replace(/[^0-9.]/g, '') })}
+                                keyboardType="decimal-pad"
+                                maxLength={8}
+                            />
 
                             <TouchableOpacity style={styles.saveBtn} onPress={handleUpdateFarmer} disabled={loading}>
                                 {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>बदलाव सुरक्षित करें</Text>}
@@ -869,35 +1067,20 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
                 </View>
             </Modal>
 
-            {/* Reject Reason Modal */}
-            <Modal visible={rejectModal.visible} transparent animationType="slide" onRequestClose={() => setRejectModal({ ...rejectModal, visible: false })}>
-                <View style={styles.modalOverlay}>
-                    <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
-                    <View style={styles.editModalContent}>
-                        <View style={styles.modalHeader}>
-                            <Text style={[styles.modalTitle, { color: COLORS.error }]}>अस्वीकार करने का कारण</Text>
-                            <TouchableOpacity onPress={() => setRejectModal({ ...rejectModal, visible: false })}>
-                                <Ionicons name="close" size={28} color="#1e293b" />
-                            </TouchableOpacity>
-                        </View>
-                        
-                        <View style={{ paddingBottom: 20 }}>
-                            <Text style={styles.inputLabel}>कृपया कारण लिखें कि यह आवेदन क्यों अस्वीकार किया जा रहा है:</Text>
-                            <TextInput 
-                                style={[styles.input, { height: 100, textAlignVertical: 'top' }]} 
-                                value={rejectModal.reason} 
-                                onChangeText={(t) => setRejectModal({ ...rejectModal, reason: t })} 
-                                multiline 
-                                placeholder="उदाहरण: आधार कार्ड की फोटो साफ नहीं है..."
-                            />
-                            
-                            <TouchableOpacity style={[styles.saveBtn, { backgroundColor: COLORS.error }]} onPress={submitReject}>
-                                <Text style={styles.saveBtnText}>अस्वीकार करें</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
+            {/* Smooth Reject Reason Modal */}
+            <ReasonModal
+                visible={rejectModal.visible}
+                title="अस्वीकार करने का कारण"
+                subtitle="कृपया सटीक कारण लिखें कि यह आवेदन क्यों अस्वीकार किया जा रहा है:"
+                placeholder="सटीक कारण विस्तार से लिखें (जैसे: आधार कार्ड स्पष्ट नहीं है, नाम मेल नहीं खाता)..."
+                confirmText="अस्वीकार करें"
+                cancelText="वापस जाएं"
+                confirmColor={COLORS.error}
+                iconName="close-circle-outline"
+                loading={loading}
+                onConfirm={(reason) => submitReject(reason)}
+                onCancel={() => setRejectModal({ visible: false, data: null, reason: '' })}
+            />
 
             {/* Confirm Modal */}
             <ConfirmModal
@@ -917,7 +1100,8 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
                 type={alertModal.type}
                 title={alertModal.title}
                 message={alertModal.message}
-                onClose={() => setAlertModal({ ...alertModal, visible: false })}
+                buttons={alertModal.buttons}
+                onClose={() => setAlertModal(prev => ({ ...prev, visible: false, buttons: undefined }))}
             />
         </View>
     );
@@ -950,13 +1134,30 @@ const styles = StyleSheet.create({
     detailBox: { flex: 1, padding: 10, alignItems: 'center' },
     detailLabel: { fontSize: 10, color: COLORS.textSecondary, fontWeight: '800', textTransform: 'uppercase', marginBottom: 2 },
     detailText: { fontSize: 14, color: COLORS.textPrimary, fontWeight: '700' },
-    docRow: { flexDirection: 'row', gap: 10, marginBottom: 15 },
-    docButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F1F5F9', paddingVertical: 8, borderRadius: 10, gap: 5, borderWidth: 1, borderColor: '#E2E8F0' },
+    docRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 15 },
+    docButton: { flexBasis: '47%', flexGrow: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F1F5F9', paddingVertical: 8, paddingHorizontal: 6, borderRadius: 10, gap: 5, borderWidth: 1, borderColor: '#E2E8F0' },
     docButtonText: { fontSize: 12, fontWeight: '700', color: COLORS.primary },
     statusBadge: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 8, borderRadius: 12, gap: 6, borderWidth: 1 },
     approvedBadge: { backgroundColor: '#E8F5E9', borderColor: 'rgba(76, 175, 80, 0.3)' },
     rejectedBadge: { backgroundColor: '#FFEBEE', borderColor: 'rgba(244, 67, 54, 0.3)' },
     statusText: { fontSize: 15, fontWeight: '900' },
+    rejectionReasonBox: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#FEF2F2',
+        borderWidth: 1,
+        borderColor: '#FECACA',
+        borderRadius: 8,
+        paddingHorizontal: 10,
+        paddingVertical: 7,
+        gap: 6,
+    },
+    rejectionReasonText: {
+        fontSize: 12,
+        color: '#B91C1C',
+        fontWeight: '600',
+        flex: 1,
+    },
     actionRow: { flexDirection: 'row', gap: 10 },
     actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 12, gap: 6 },
     approveBtn: { backgroundColor: COLORS.primary },
@@ -987,38 +1188,6 @@ const styles = StyleSheet.create({
     modalTitle: { fontSize: 18, fontWeight: '900', color: COLORS.primary },
     imageContainer: { flex: 1, borderRadius: 15, overflow: 'hidden', backgroundColor: '#f8fafc' },
     fullImage: { width: '100%', height: '100%' },
-    lockOverlay: {
-        ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(255, 255, 255, 0.4)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        zIndex: 10,
-        borderRadius: 18,
-        overflow: 'hidden',
-    },
-    lockIconCircle: {
-        width: 56,
-        height: 56,
-        borderRadius: 28,
-        backgroundColor: COLORS.white,
-        justifyContent: 'center',
-        alignItems: 'center',
-        ...SHADOWS.medium,
-        marginBottom: 10,
-    },
-    lockTextContainer: {
-        backgroundColor: 'rgba(255,255,255,0.95)',
-        paddingHorizontal: 16,
-        paddingVertical: 6,
-        borderRadius: 20,
-        ...SHADOWS.small,
-    },
-    lockText: {
-        fontSize: 13,
-        fontWeight: '900',
-        color: COLORS.primary,
-        textAlign: 'center',
-    },
     inputLabel: { fontSize: 13, fontWeight: '700', color: '#64748b', marginBottom: 5, marginLeft: 5 },
     input: { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, padding: 12, fontSize: 15, color: '#1e293b', marginBottom: 15, fontWeight: '600' },
     saveBtn: { backgroundColor: COLORS.primary, paddingVertical: 15, borderRadius: 15, alignItems: 'center', marginTop: 10, ...SHADOWS.medium },

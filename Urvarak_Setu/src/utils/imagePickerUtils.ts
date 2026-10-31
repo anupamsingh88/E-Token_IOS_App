@@ -1,6 +1,55 @@
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as DocumentPicker from 'expo-document-picker';
+import { Alert, Linking } from 'react-native';
+
+/**
+ * Ensures camera permission is active.
+ * If not granted, triggers system prompt. If denied, provides direct shortcut to open Settings.
+ */
+export const ensureCameraPermission = async (
+    showSettingsAlert: boolean = true,
+    onPermissionRequired?: () => void
+): Promise<boolean> => {
+    try {
+        const status = await ImagePicker.getCameraPermissionsAsync();
+        if (status.granted) {
+            return true;
+        }
+
+        if (status.canAskAgain || status.status === ImagePicker.PermissionStatus.UNDETERMINED) {
+            const req = await ImagePicker.requestCameraPermissionsAsync();
+            if (req.granted) {
+                return true;
+            }
+        }
+
+        if (onPermissionRequired) {
+            onPermissionRequired();
+            return false;
+        }
+
+        if (showSettingsAlert) {
+            Alert.alert(
+                'कैमरा अनुमति आवश्यक है 📷',
+                'फोटो खींचने के लिए ऐप को कैमरा उपयोग की अनुमति चाहिए। कृपया सेटिंग्स में जाकर अनुमति (Allow) चालू करें।',
+                [
+                    { text: 'रद्द करें', style: 'cancel' },
+                    {
+                        text: 'अनुमति दें (सेटिंग्स)',
+                        onPress: () => {
+                            Linking.openSettings().catch(() => {});
+                        }
+                    }
+                ]
+            );
+        }
+        return false;
+    } catch (e) {
+        console.warn('Camera permission check failed:', e);
+        return false;
+    }
+};
 
 // Image compression function - targets < 500kb
 export const compressImage = async (uri: string): Promise<string> => {
@@ -75,14 +124,14 @@ export const pickMultipleDocuments = async (
 export const pickFarmerPhoto = async (
     source: 'camera' | 'gallery',
     onSuccess: (uri: string) => void,
-    onError?: (message: string) => void
+    onError?: (message: string) => void,
+    onPermissionRequired?: () => void
 ) => {
     try {
         let result;
         if (source === 'camera') {
-            const permission = await ImagePicker.requestCameraPermissionsAsync();
-            if (!permission.granted) {
-                if (onError) onError('कैमरा उपयोग के लिए अनुमति दें');
+            const hasPermission = await ensureCameraPermission(true, onPermissionRequired);
+            if (!hasPermission) {
                 return;
             }
             result = await ImagePicker.launchCameraAsync({
@@ -118,14 +167,14 @@ export const pickFarmerPhoto = async (
 export const pickMultipleKhatauniPhotos = async (
     source: 'camera' | 'gallery',
     onSuccess: (uris: string[]) => void,
-    onError?: (message: string) => void
+    onError?: (message: string) => void,
+    onPermissionRequired?: () => void
 ) => {
     try {
         let result;
         if (source === 'camera') {
-            const permission = await ImagePicker.requestCameraPermissionsAsync();
-            if (!permission.granted) {
-                if (onError) onError('कैमरा उपयोग के लिए अनुमति दें');
+            const hasPermission = await ensureCameraPermission(true, onPermissionRequired);
+            if (!hasPermission) {
                 return;
             }
             result = await ImagePicker.launchCameraAsync({

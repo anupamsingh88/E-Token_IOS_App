@@ -253,18 +253,47 @@ export default function TokenQRScreen({
                                 isPending && { color: COLORS.warning },
                                 isCancelled && { color: COLORS.error }
                             ] as any}>
-                                {isPending ? 'लंबित (Pending)' : 'रद्द किया गया (Cancelled)'}
+                                {isPending ? 'लंबित (Pending)' : (((booking as any).cancelled_by === 'SYSTEM_AUTO' || (booking as any).cancellation_reason?.includes('स्वतः रद्द') || (booking as any).cancellation_reason?.includes('किसान के न पहुँचने')) ? 'स्वतः रद्द हुआ' : 'रद्द किया गया (Cancelled)')}
                             </Text>
                             <Text style={{ color: COLORS.textSecondary, fontSize: FONT_SIZES.sm, textAlign: 'center', marginTop: 4 }}>
                                 {isPending
                                     ? 'टोकन नंबर और QR कोड पुष्टि होने के बाद उपलब्ध होगा'
-                                    : 'यह बुकिंग रद्द कर दी गई है'}
+                                    : (((booking as any).cancelled_by === 'SYSTEM_AUTO' || (booking as any).cancellation_reason?.includes('स्वतः रद्द') || (booking as any).cancellation_reason?.includes('किसान के न पहुँचने'))
+                                        ? 'निर्धारित तारीख पर न पहुँचने के कारण यह बुकिंग स्वतः रद्द हो गई है'
+                                        : 'यह बुकिंग रद्द कर दी गई है')}
+                            </Text>
+                            {isCancelled && (
+                                <View style={{ marginTop: 14, backgroundColor: '#FFFFFF', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#FECACA', width: '100%' }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                                        <Ionicons name="information-circle" size={16} color={COLORS.error} />
+                                        <Text style={{ fontSize: moderateScale(13), color: COLORS.error, fontWeight: 'bold' }}>
+                                            रद्द करने का कारण:
+                                        </Text>
+                                    </View>
+                                    <Text style={{ fontSize: moderateScale(13), color: '#7F1D1D', fontWeight: '600', lineHeight: 18 }}>
+                                        {(booking as any).cancellation_reason || 'दुकानदार द्वारा रद्द किया गया'}
+                                    </Text>
+                                </View>
+                            )}
+                        </View>
+                    )}
+
+                    {(((booking as any).status === 'Extended' || (booking as any).status === 'extended') || !!(booking as any).extension_reason) && (
+                        <View style={{ marginTop: 14, backgroundColor: '#FFFBEB', padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#FDE68A', width: '100%' }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                                <Ionicons name="calendar-outline" size={18} color="#D97706" />
+                                <Text style={{ fontSize: moderateScale(13), color: '#D97706', fontWeight: 'bold' }}>
+                                    तारीख बढ़ाने का कारण:
+                                </Text>
+                            </View>
+                            <Text style={{ fontSize: moderateScale(13), color: '#92400E', fontWeight: '600', lineHeight: 18 }}>
+                                {(booking as any).extension_reason || 'दुकानदार द्वारा तारीख बढ़ाई गई'}
                             </Text>
                         </View>
                     )}
 
                     {/* Booking Details - OUTSIDE capture */}
-                    <Card style={{ ...styles.detailsCard, marginTop: 24 } as any}>
+                    <Card style={{ ...styles.detailsCard, marginTop: 20 } as any}>
                         <Text style={styles.detailsTitle}>बुकिंग का विवरण</Text>
 
                         <View style={styles.detailRow}>
@@ -325,13 +354,31 @@ export default function TokenQRScreen({
                                 {(booking as any).shopName || (booking as any).retailer_name || booking.retailerId}
                             </Text>
                         </View>
+
+                        {!!((booking as any).kisan_panjikaran_number || (booking as any).kisan_code) && (
+                            <View style={styles.detailRow}>
+                                <Text style={styles.detailLabel}>🌾 किसान कोड:</Text>
+                                <Text style={[styles.detailValue, { fontWeight: '700', color: '#15803D' }]}>
+                                    {(booking as any).kisan_panjikaran_number || (booking as any).kisan_code}
+                                </Text>
+                            </View>
+                        )}
+
+                        {!!(booking as any).registry_id && (
+                            <View style={styles.detailRow}>
+                                <Text style={styles.detailLabel}>📑 रजिस्ट्री आईडी:</Text>
+                                <Text style={styles.detailValue}>
+                                    {(booking as any).registry_id}
+                                </Text>
+                            </View>
+                        )}
                     </Card>
 
                     {/* Important Instructions */}
                     <Card style={[styles.instructionCard, styles.warningCard] as any}>
                         <Text style={styles.instructionTitle}>⚠️ महत्वपूर्ण निर्देश</Text>
                         <Text style={styles.instructionText}>
-                            • निर्धारित समय पर ही दुकान पर पहुंचें
+                            • निर्धारित तारीख पर ही दुकान पर पहुंचें, अन्यथा बुकिंग स्वतः रद्द हो जाएगी
                         </Text>
                         <Text style={styles.instructionText}>
                             • अपना टोकन नंबर या QR कोड साथ रखें

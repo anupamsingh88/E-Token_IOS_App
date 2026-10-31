@@ -94,15 +94,28 @@ function sendFirebaseNotification($fcmToken, $title, $body, $dataPayload = []) {
         
         $url = "https://fcm.googleapis.com/v1/projects/" . $authData['project_id'] . "/messages:send";
 
-        $message = [
-            "message" => [
-                "token" => $fcmToken,
-                "notification" => [
-                    "title" => $title,
-                    "body" => $body
-                ],
-                "data" => $dataPayload
+        // Build message payload
+        $messageBody = [
+            "token" => $fcmToken,
+            "notification" => [
+                "title" => $title,
+                "body" => $body
             ]
+        ];
+
+        // Format data payload as string map (FCM v1 requires all values to be string and format as JSON object)
+        if (!empty($dataPayload) && is_array($dataPayload)) {
+            $formattedData = [];
+            foreach ($dataPayload as $k => $v) {
+                $formattedData[(string)$k] = is_scalar($v) ? (string)$v : json_encode($v);
+            }
+            if (!empty($formattedData)) {
+                $messageBody["data"] = $formattedData;
+            }
+        }
+
+        $message = [
+            "message" => $messageBody
         ];
 
         $headers = [

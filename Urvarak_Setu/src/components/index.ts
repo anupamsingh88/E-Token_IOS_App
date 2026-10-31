@@ -12,4 +12,6 @@ export { default as WhatsAppIcon } from './Icons/WhatsAppIcon';
 export { default as ParticleBackground } from './ParticleBackground';
 export { default as ForceUpdateModal } from './ForceUpdateModal';
 export { default as SetMpinModal } from './SetMpinModal';
+export { default as KisanCodePromptModal } from './KisanCodePromptModal';
+export { default as DocumentViewerModal } from './DocumentViewerModal';
 export * from './ModernAlert';

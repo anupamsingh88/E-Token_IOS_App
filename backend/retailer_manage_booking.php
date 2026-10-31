@@ -6,6 +6,7 @@ header('Content-Type: application/json');
 
 require_once __DIR__ . '/db_connect.php';
 include 'retailer_sms_helper.php';
+require_once __DIR__ . '/firebase_helper.php';
 
 global $conn;
 
@@ -49,10 +50,11 @@ $order_id = "";
 $farmer_id = "";
 $farmer_name = "";
 $farmer_mobile = "";
+$farmer_fcm_token = "";
 $current_booking_date = "";
 
 // First try: Direct match
-$find_query = "SELECT b.order_id, b.farmer_id, b.booking_date, f.name as farmer_name, f.mobile as farmer_mobile 
+$find_query = "SELECT b.order_id, b.farmer_id, b.booking_date, f.name as farmer_name, f.mobile as farmer_mobile, f.fcm_token as farmer_fcm_token 
               FROM product_bookings b 
               LEFT JOIN farmer_info f ON b.farmer_id = f.farmer_id 
               WHERE b.id = ? AND b.retailer_id = ?";
@@ -67,13 +69,14 @@ if ($find_stmt) {
         $current_booking_date = $row['booking_date'];
         $farmer_name = $row['farmer_name'];
         $farmer_mobile = $row['farmer_mobile'];
+        $farmer_fcm_token = $row['farmer_fcm_token'] ?? '';
     }
     $find_stmt->close();
 }
 
 // Second try: If not found, try joining with retailer_info to resolve ID mismatch
 if (empty($order_id)) {
-    $alt_query = "SELECT b.order_id, b.farmer_id, b.booking_date, f.name as farmer_name, f.mobile as farmer_mobile 
+    $alt_query = "SELECT b.order_id, b.farmer_id, b.booking_date, f.name as farmer_name, f.mobile as farmer_mobile, f.fcm_token as farmer_fcm_token 
                   FROM product_bookings b 
                   JOIN farmer_info f ON b.farmer_id = f.farmer_id 
                   JOIN retailer_info r ON b.retailer_id = r.retailer_id 
@@ -89,6 +92,7 @@ if (empty($order_id)) {
             $current_booking_date = $row['booking_date'];
             $farmer_name = $row['farmer_name'];
             $farmer_mobile = $row['farmer_mobile'];
+            $farmer_fcm_token = $row['farmer_fcm_token'] ?? '';
         }
         $alt_stmt->close();
     }
@@ -237,16 +241,38 @@ if (!empty($token_number)) {
     $types .= "s";
 }
 
+$cancellation_reason = "";
 if ($action === 'confirm') {
     $set_clause .= ", approved_date = IF(approved_date IS NULL, NOW(), approved_date)";
 } else if ($action === 'collect') {
     $set_clause .= ", collected_at = NOW()";
 } else if ($action === 'cancel') {
-    $set_clause .= ", cancelled_at = NOW()";
+    $cancellation_reason = isset($data['cancellation_reason']) && trim($data['cancellation_reason']) !== ''
+        ? trim($data['cancellation_reason'])
+        : (isset($data['reason']) && trim($data['reason']) !== '' ? trim($data['reason']) : 'दुकानदार द्वारा रद्द किया गया');
+
+    // Ensure columns exist gracefully
+    try {
+        $conn->query("ALTER TABLE product_bookings ADD COLUMN cancellation_reason TEXT NULL DEFAULT NULL AFTER cancelled_at");
+    } catch (Exception $e) {}
+    try {
+        $conn->query("ALTER TABLE product_bookings ADD COLUMN cancelled_by VARCHAR(50) NULL DEFAULT NULL AFTER cancellation_reason");
+    } catch (Exception $e) {}
+
+    $set_clause .= ", cancelled_at = NOW(), cancellation_reason = ?, cancelled_by = ?";
+    $params[] = $cancellation_reason;
+    $params[] = $retailer_id_str;
+    $types .= "ss";
 } else if ($action === 'extend') {
-    $set_clause .= ", extended_at = NOW(), booking_date = ?";
+    $extension_reason = isset($data['extension_reason']) && trim($data['extension_reason']) !== ''
+        ? trim($data['extension_reason'])
+        : (isset($data['reason']) && trim($data['reason']) !== '' ? trim($data['reason']) : 'दुकानदार द्वारा तारीख बढ़ाई गई');
+
+    $set_clause .= ", extended_at = NOW(), booking_date = ?, extension_reason = ?, extended_by = ?";
     $params[] = $new_booking_date;
-    $types .= "s";
+    $params[] = $extension_reason;
+    $params[] = $retailer_id_str;
+    $types .= "sss";
 }
 
 // Fixed where clause to use resolved retailer_id
@@ -268,6 +294,56 @@ if ($update_stmt) {
             $display_date = ($action === 'extend') ? $new_booking_date : date('Y-m-d');
             $msg = get_booking_message($action, $farmer_name, $product_summary, $display_date, $token_number ?? "");
             send_notification_sms($farmer_mobile, $msg);
+        }
+
+        // 5. Send FCM Push Notification
+        if (!empty($farmer_fcm_token)) {
+            try {
+                if ($action === 'cancel') {
+                    $fcm_title = "बुकिंग रद्द की गई ❌";
+                    $fcm_body = "आपकी बुकिंग रद्द कर दी गई है। कारण: " . $cancellation_reason;
+                    $fcm_payload = [
+                        'type' => 'booking_cancelled',
+                        'order_id' => (string)$order_id,
+                        'booking_id' => (string)$booking_id,
+                        'status' => 'Cancelled',
+                        'reason' => (string)$cancellation_reason
+                    ];
+                    sendFirebaseNotification($farmer_fcm_token, $fcm_title, $fcm_body, $fcm_payload);
+                } else if ($action === 'confirm') {
+                    $fcm_title = "बुकिंग स्वीकृत ✅";
+                    $fcm_body = "आपकी बुकिंग स्वीकृत हो गई है। टोकन नंबर: " . ($token_number ?? "");
+                    $fcm_payload = [
+                        'type' => 'booking_confirmed',
+                        'order_id' => (string)$order_id,
+                        'token' => (string)($token_number ?? ""),
+                        'status' => 'Approved'
+                    ];
+                    sendFirebaseNotification($farmer_fcm_token, $fcm_title, $fcm_body, $fcm_payload);
+                } else if ($action === 'extend') {
+                    $fcm_title = "तारीख में बदलाव 📅";
+                    $fcm_body = "आपकी बुकिंग की तारीख बदलकर " . ($new_booking_date ?? "") . " कर दी गई है। कारण: " . $extension_reason;
+                    $fcm_payload = [
+                        'type' => 'booking_extended',
+                        'order_id' => (string)$order_id,
+                        'new_date' => (string)($new_booking_date ?? ""),
+                        'status' => 'Extended',
+                        'reason' => (string)$extension_reason
+                    ];
+                    sendFirebaseNotification($farmer_fcm_token, $fcm_title, $fcm_body, $fcm_payload);
+                } else if ($action === 'collect') {
+                    $fcm_title = "उर्वरक प्राप्त हुआ 🌾";
+                    $fcm_body = "आपकी खाद सफलतापूर्वक वितरित कर दी गई है।";
+                    $fcm_payload = [
+                        'type' => 'booking_collected',
+                        'order_id' => (string)$order_id,
+                        'status' => 'Collected'
+                    ];
+                    sendFirebaseNotification($farmer_fcm_token, $fcm_title, $fcm_body, $fcm_payload);
+                }
+            } catch (Exception $e) {
+                error_log("FCM send error in retailer_manage_booking: " . $e->getMessage());
+            }
         }
 
         echo json_encode([

@@ -4,6 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, SHADOWS } from '../constants';
+import { useSettings } from '../contexts/SettingsContext';
+import { resolveAppImage } from '../utils/imageResolver';
 
 interface TopHeaderProps {
     retailerName?: string;
@@ -18,6 +20,9 @@ const TopHeader: React.FC<TopHeaderProps> = ({
     showBack = false,
     onBack
 }) => {
+    const { settings } = useSettings();
+    const defaultLogo = require('../../assets/icon.png');
+    const logoSource = resolveAppImage(settings?.retailer_app_logo_url || settings?.retailer_app_icon_url || settings?.logo_url, defaultLogo);
     const logoScale = useRef(new Animated.Value(1)).current;
 
     const displayedName = retailerName;
@@ -72,7 +77,7 @@ const TopHeader: React.FC<TopHeaderProps> = ({
                     <View style={styles.headerRight}>
                         <Animated.View style={{ transform: [{ scale: logoScale }] }}>
                             <Image
-                                source={require('../../assets/icon.png')}
+                                source={logoSource}
                                 style={styles.logoImage}
                                 resizeMode="contain"
                             />

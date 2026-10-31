@@ -83,14 +83,21 @@ if (isset($_FILES['khatauni_photo'])) {
     }
 }
 
-$is_updating_media = $has_new_farmer_photo || $has_new_aadhaar_photo || $has_new_khatauni_photo;
+$has_new_kisan_panjikaran_photo = isset($_FILES['kisan_panjikaran_photo']) && (
+    is_array($_FILES['kisan_panjikaran_photo']['error'])
+        ? ($_FILES['kisan_panjikaran_photo']['error'][0] === UPLOAD_ERR_OK)
+        : ($_FILES['kisan_panjikaran_photo']['error'] === UPLOAD_ERR_OK)
+);
+
+$is_updating_media = $has_new_farmer_photo || $has_new_aadhaar_photo || $has_new_khatauni_photo || $has_new_kisan_panjikaran_photo;
 
 // 3. Setup directories
 $archive_base = __DIR__ . '/uploads/Previous media/';
 $archive_dirs = [
     'adhhar'   => $archive_base . 'adhhar/',
     'photo'    => $archive_base . 'photo/',
-    'khatauni' => $archive_base . 'khatauni copy/'
+    'khatauni' => $archive_base . 'khatauni copy/',
+    'kisan_card' => $archive_base . 'kisan_cards/'
 ];
 
 foreach ($archive_dirs as $d) {
@@ -102,7 +109,8 @@ foreach ($archive_dirs as $d) {
 $active_dirs = [
     'farmer_photos'   => __DIR__ . '/uploads/farmer_photos/',
     'aadhaar_cards'   => __DIR__ . '/uploads/aadhaar_cards/',
-    'khatauni_photos' => __DIR__ . '/uploads/khatauni_photos/'
+    'khatauni_photos' => __DIR__ . '/uploads/khatauni_photos/',
+    'kisan_cards'     => __DIR__ . '/uploads/kisan_cards/'
 ];
 
 foreach ($active_dirs as $d) {
@@ -195,6 +203,41 @@ if ($has_new_khatauni_photo) {
     }
 }
 
+$new_kisan_panjikaran_photo_paths = [];
+if ($has_new_kisan_panjikaran_photo) {
+    if (!empty($current_farmer['kisan_panjikaran_photo'])) {
+        $old_kp_files = explode(',', $current_farmer['kisan_panjikaran_photo']);
+        foreach ($old_kp_files as $okp) {
+            archive_existing_file(trim($okp), $archive_dirs['kisan_card']);
+        }
+    }
+    if (is_array($_FILES['kisan_panjikaran_photo']['name'])) {
+        for ($i = 0; $i < count($_FILES['kisan_panjikaran_photo']['name']); $i++) {
+            if ($_FILES['kisan_panjikaran_photo']['error'][$i] === UPLOAD_ERR_OK) {
+                $tmp = $_FILES['kisan_panjikaran_photo']['tmp_name'][$i];
+                $orig_name = $_FILES['kisan_panjikaran_photo']['name'][$i];
+                $ext = pathinfo($orig_name, PATHINFO_EXTENSION);
+                if (!$ext) $ext = 'jpg';
+                $filename = 'kisan_card_' . $farmer_id . '_' . time() . '_' . $i . '.' . $ext;
+                if (move_uploaded_file($tmp, $active_dirs['kisan_cards'] . $filename)) {
+                    $new_kisan_panjikaran_photo_paths[] = 'uploads/kisan_cards/' . $filename;
+                }
+            }
+        }
+    } else {
+        if ($_FILES['kisan_panjikaran_photo']['error'] === UPLOAD_ERR_OK) {
+            $tmp = $_FILES['kisan_panjikaran_photo']['tmp_name'];
+            $orig_name = $_FILES['kisan_panjikaran_photo']['name'];
+            $ext = pathinfo($orig_name, PATHINFO_EXTENSION);
+            if (!$ext) $ext = 'jpg';
+            $filename = 'kisan_card_' . $farmer_id . '_' . time() . '.' . $ext;
+            if (move_uploaded_file($tmp, $active_dirs['kisan_cards'] . $filename)) {
+                $new_kisan_panjikaran_photo_paths[] = 'uploads/kisan_cards/' . $filename;
+            }
+        }
+    }
+}
+
 // 5. Build SQL Update
 $name = $data['name'] ?? null;
 $mobile = $data['mobile'] ?? null;
@@ -227,9 +270,35 @@ if ($khatauni_number !== null && trim($khatauni_number) !== '') {
     $types .= "s";
 }
 if ($khasra_rukba !== null) {
+    $rawRukba = trim((string)$khasra_rukba);
+    if (preg_match('/^[6-9][0-9]{9}$/', $rawRukba) || strlen($rawRukba) >= 10) {
+        echo json_encode(["status" => "error", "message" => "जमीन के क्षेत्रफल में मोबाइल नंबर नहीं भरा जा सकता"], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    $val = (float)$khasra_rukba;
+    if ($val > 1000) {
+        $val = 1000.0;
+    }
     $update_parts[] = "khasra_rukba = ?";
-    $params[] = (float)$khasra_rukba;
+    $params[] = round($val, 4);
     $types .= "d";
+}
+
+$registry_id = $data['registry_id'] ?? null;
+$kisan_code = $data['kisan_panjikaran_number'] ?? ($data['kisan_code'] ?? null);
+
+if ($registry_id !== null) {
+    $cleanReg = trim((string)$registry_id);
+    $update_parts[] = "registry_id = ?";
+    $params[] = ($cleanReg !== '' ? $cleanReg : null);
+    $types .= "s";
+}
+
+if ($kisan_code !== null) {
+    $cleanKisan = trim((string)$kisan_code);
+    $update_parts[] = "kisan_panjikaran_number = ?";
+    $params[] = ($cleanKisan !== '' ? $cleanKisan : null);
+    $types .= "s";
 }
 
 if ($new_profile_photo_path !== null) {
@@ -247,6 +316,12 @@ if ($new_aadhaar_photo_path !== null) {
 if (!empty($new_khatauni_photo_paths)) {
     $update_parts[] = "khatauni_photo = ?";
     $params[] = implode(',', $new_khatauni_photo_paths);
+    $types .= "s";
+}
+
+if (!empty($new_kisan_panjikaran_photo_paths)) {
+    $update_parts[] = "kisan_panjikaran_photo = ?";
+    $params[] = implode(',', $new_kisan_panjikaran_photo_paths);
     $types .= "s";
 }
 
@@ -273,15 +348,18 @@ if ($stmt) {
                 "farmer_id" => $farmer_id,
                 "profile_photo" => $new_profile_photo_path ?: $current_farmer['profile_photo'],
                 "aadhaar_photo" => $new_aadhaar_photo_path ?: $current_farmer['aadhaar_photo'],
-                "khatauni_photo" => (!empty($new_khatauni_photo_paths) ? implode(',', $new_khatauni_photo_paths) : $current_farmer['khatauni_photo'])
+                "khatauni_photo" => (!empty($new_khatauni_photo_paths) ? implode(',', $new_khatauni_photo_paths) : $current_farmer['khatauni_photo']),
+                "kisan_panjikaran_photo" => (!empty($new_kisan_panjikaran_photo_paths) ? implode(',', $new_kisan_panjikaran_photo_paths) : ($current_farmer['kisan_panjikaran_photo'] ?? null))
             ]
         ], JSON_UNESCAPED_UNICODE);
     } else {
-        echo json_encode(["status" => "error", "message" => "अपडेट विफल रहा: " . $stmt->error], JSON_UNESCAPED_UNICODE);
+        error_log("retailer_update_farmer execute error: " . $stmt->error);
+        echo json_encode(["status" => "error", "message" => "अपडेट विफल रहा। कृपया दर्ज की गई जानकारी जांचें।"], JSON_UNESCAPED_UNICODE);
     }
     $stmt->close();
 } else {
-    echo json_encode(["status" => "error", "message" => "डेटाबेस त्रुटि: " . $conn->error], JSON_UNESCAPED_UNICODE);
+    error_log("retailer_update_farmer prepare error: " . $conn->error);
+    echo json_encode(["status" => "error", "message" => "तकनीकी समस्या आई। कृपया पुनः प्रयास करें।"], JSON_UNESCAPED_UNICODE);
 }
 
 $conn->close();

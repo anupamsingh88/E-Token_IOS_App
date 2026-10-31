@@ -19,9 +19,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $mobile = $data['mobile'] ?? null;
 $aadhaar = $data['aadhaar'] ?? null;
 $registryId = $data['registry_id'] ?? null;
+$kisanCode = $data['kisan_panjikaran_number'] ?? ($data['kisan_code'] ?? null);
 
-if (empty($mobile) && empty($aadhaar) && empty($registryId)) {
-    echo json_encode(["status" => "error", "message" => "Please provide mobile, aadhaar or registry_id"]);
+if (empty($mobile) && empty($aadhaar) && empty($registryId) && empty($kisanCode)) {
+    echo json_encode(["status" => "error", "message" => "Please provide mobile, aadhaar, registry_id or kisan_panjikaran_number"]);
     exit;
 }
 
@@ -32,6 +33,16 @@ try {
         $stmt->execute([$registryId]);
         if ($stmt->fetch()) {
             echo json_encode(['status' => 'active_registry', 'message' => 'यह रजिस्ट्री आईडी पहले से सक्रिय है']);
+            exit;
+        }
+    }
+
+    if (!empty($kisanCode)) {
+        // Check kisan_panjikaran_number
+        $stmt = $pdo->prepare("SELECT status FROM farmer_info WHERE kisan_panjikaran_number = ? AND status != 2");
+        $stmt->execute([$kisanCode]);
+        if ($stmt->fetch()) {
+            echo json_encode(['status' => 'active_kisan_code', 'message' => 'यह कृषक पंजिका कोड पहले से पंजीकृत और सक्रिय है']);
             exit;
         }
     }
@@ -74,6 +85,7 @@ try {
     echo json_encode(['status' => 'new', 'message' => 'New registration allowed']);
 
 } catch (Exception $e) {
-    echo json_encode(["status" => "error", "message" => "Database error: " . $e->getMessage()]);
+    error_log("check_farmer_status error: " . $e->getMessage());
+    echo json_encode(["status" => "error", "message" => "जांच के दौरान तकनीकी समस्या आई। कृपया पुनः प्रयास करें।"]);
 }
 ?>

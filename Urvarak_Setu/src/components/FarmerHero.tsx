@@ -4,6 +4,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, FONT_SIZES, FONT_WEIGHTS, BORDER_RADIUS, SHADOWS } from '../constants';
 import { scale, verticalScale, moderateScale } from '../utils/responsive';
+import { useSettings } from '../contexts/SettingsContext';
+import { resolveAppImage } from '../utils/imageResolver';
 
 
 const { width } = Dimensions.get('window');
@@ -19,6 +21,9 @@ export default function FarmerHero({ name, subtitle, photoUrl, onProfilePress }:
     const insets = useSafeAreaInsets();
     const scaleAnim = useRef(new Animated.Value(0.5)).current;
     const opacityAnim = useRef(new Animated.Value(0)).current;
+    const { settings } = useSettings();
+    const defaultLogo = require('../../assets/icon.png');
+    const logoSource = resolveAppImage(settings?.farmer_app_logo_url || settings?.farmer_app_icon_url || settings?.logo_url, defaultLogo);
 
     useEffect(() => {
         Animated.parallel([
@@ -55,7 +60,7 @@ export default function FarmerHero({ name, subtitle, photoUrl, onProfilePress }:
                     {photoUrl ? (
                         <View style={[styles.avatar, styles.imageWrapper]}>
                             <Image
-                                source={{ uri: photoUrl }}
+                                source={{ uri: photoUrl, cache: 'force-cache' }}
                                 style={styles.avatarImage}
                                 resizeMode="cover"
                             />
@@ -81,7 +86,7 @@ export default function FarmerHero({ name, subtitle, photoUrl, onProfilePress }:
                 {/* Decorative Farm Elements */}
                 <View style={styles.decorContainer}>
                     <Animated.Image
-                        source={require('../../assets/icon.png')}
+                        source={logoSource}
                         style={[
                             styles.decorLogo,
                             {

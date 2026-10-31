@@ -21,6 +21,11 @@ interface AppSettings {
         };
     };
     advisory_tips: AdvisoryTip[];
+    retailer_app_logo_url?: string;
+    retailer_app_icon_url?: string;
+    retailer_app_bg_image_url?: string;
+    bg_image_url?: string;
+    app_content?: Record<string, string>;
 }
 
 interface AdvisoryTip {

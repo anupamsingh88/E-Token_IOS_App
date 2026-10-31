@@ -28,7 +28,7 @@ interface ParticleBackgroundProps {
 const ParticleBackground: React.FC<ParticleBackgroundProps> = ({
     children,
     backgroundColor = 'transparent',
-    hideImage = false
+    hideImage = true
 }) => {
     const animations = useRef(particles.map(() => new Animated.Value(0))).current;
 

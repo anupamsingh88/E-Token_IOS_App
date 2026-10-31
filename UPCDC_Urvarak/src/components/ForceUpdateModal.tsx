@@ -14,8 +14,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSettings } from '../contexts/SettingsContext';
 
 // Current App Version Constants (Match android/app/build.gradle)
-export const CURRENT_APP_VERSION_CODE = 16;
-export const CURRENT_APP_VERSION_NAME = '2.0.5';
+export const CURRENT_APP_VERSION_CODE = 18;
+export const CURRENT_APP_VERSION_NAME = '2.0.7';
 export const PLAY_STORE_URL =
   'https://play.google.com/store/apps/details?id=com.weknowtech.upcdcurvarak';
 export const PLAY_STORE_MARKET_URL =
@@ -30,8 +30,9 @@ export default function ForceUpdateModal() {
   const targetPlayStoreUrl = (settings as any)?.retailer_app_play_store_url || (settings as any)?.play_store_url || PLAY_STORE_URL;
 
   const isUpdateRequired =
-    Boolean(minVersionCode && Number(minVersionCode) > CURRENT_APP_VERSION_CODE) ||
-    isForceActive;
+    Platform.OS === 'android'
+      ? (Boolean(minVersionCode && Number(minVersionCode) > CURRENT_APP_VERSION_CODE) || isForceActive)
+      : Boolean((settings as any)?.retailer_app_ios_force_update);
 
   // Prevent back button on Android while force update is visible
   useEffect(() => {

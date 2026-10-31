@@ -107,7 +107,48 @@ try {
             $seasonalSettings[$season][$row['fertilizer_type']] = floatval($row['allotment_per_hectare']);
         }
     }
-    $settings['seasonal_settings'] = $seasonalSettings;
+    // ── Platform-specific version override (Prevent Android versionCode blocking iOS TestFlight/AppStore builds) ──
+    $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+    $platformHeader = strtolower($_SERVER['HTTP_X_PLATFORM'] ?? $_GET['platform'] ?? '');
+
+    $isIos = false;
+    if ($platformHeader === 'ios' ||
+        stripos($userAgent, 'iPhone') !== false ||
+        stripos($userAgent, 'iPad') !== false ||
+        stripos($userAgent, 'iOS') !== false ||
+        stripos($userAgent, 'CFNetwork') !== false ||
+        stripos($userAgent, 'Darwin') !== false) {
+        $isIos = true;
+    }
+
+    if ($isIos) {
+        // If request is from iOS, do NOT apply Android version codes
+        // Use iOS-specific keys if configured, else disable force update so TestFlight builds work seamlessly
+        $settings['farmer_app_min_version_code'] = isset($settings['farmer_app_ios_min_build']) ? floatval($settings['farmer_app_ios_min_build']) : 0;
+        $settings['farmer_app_latest_version_code'] = isset($settings['farmer_app_ios_latest_build']) ? floatval($settings['farmer_app_ios_latest_build']) : 0;
+        $settings['farmer_app_force_update'] = isset($settings['farmer_app_ios_force_update']) ? (bool)$settings['farmer_app_ios_force_update'] : false;
+
+        $settings['min_app_version_code'] = 0;
+        $settings['force_update_active'] = false;
+        $settings['force_update'] = false;
+
+        $settings['retailer_app_force_update'] = isset($settings['retailer_app_ios_force_update']) ? (bool)$settings['retailer_app_ios_force_update'] : false;
+    }
+
+    // Farmer App Specific Branding Defaults & Mapping
+    $settings['logo_url'] = !empty($settings['farmer_app_logo_url']) ? $settings['farmer_app_logo_url'] : ($settings['logo_url'] ?? 'assets/urvarak_setu/icon.png');
+    $settings['icon_url'] = !empty($settings['farmer_app_icon_url']) ? $settings['farmer_app_icon_url'] : ($settings['icon_url'] ?? 'assets/urvarak_setu/icon.png');
+    $settings['bg_image_url'] = !empty($settings['farmer_app_bg_image_url']) ? $settings['farmer_app_bg_image_url'] : 'assets/urvarak_setu/Farmer in golden wheat field.png';
+
+    // Fetch active app_content for CMS content access
+    $contentRes = $conn->query("SELECT content_key, content_value FROM app_content WHERE is_active = 1");
+    $appContent = [];
+    if ($contentRes) {
+        while ($cRow = $contentRes->fetch_assoc()) {
+            $appContent[$cRow['content_key']] = $cRow['content_value'];
+        }
+    }
+    $settings['app_content'] = $appContent;
 
     echo json_encode([
         'success' => true,

@@ -8,6 +8,7 @@
 
 import Logger from './logger';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
 // Memory cache for the auth token to avoid repeated AsyncStorage reads
 let cachedToken: string | null = null;
@@ -51,6 +52,8 @@ export async function apiFetch(
         cachedToken = await AsyncStorage.getItem('@auth_token');
         tokenLoaded = true;
     }
+
+    headers.set('X-Platform', Platform.OS);
 
     if (cachedToken) {
         headers.set('Authorization', `Bearer ${cachedToken}`);

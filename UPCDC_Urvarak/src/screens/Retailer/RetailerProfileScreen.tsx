@@ -101,10 +101,8 @@ const RetailerProfileScreen: React.FC<ProfileScreenProps> = ({
     const [helpLoading, setHelpLoading] = useState(true);
 
     // Password form state
-    const [currentPass, setCurrentPass] = useState('');
     const [newPass, setNewPass] = useState('');
     const [confirmPass, setConfirmPass] = useState('');
-    const [showCurrent, setShowCurrent] = useState(false);
     const [showNew, setShowNew] = useState(false);
     const [showConfirm, setShowConfirm] = useState(false);
     const [passLoading, setPassLoading] = useState(false);
@@ -397,8 +395,12 @@ const RetailerProfileScreen: React.FC<ProfileScreenProps> = ({
     };
 
     const handleChangePassword = async () => {
-        if (!currentPass || !newPass || !confirmPass) {
+        if (!newPass || !confirmPass) {
             showAlert('error', 'त्रुटि', 'सभी फ़ील्ड भरें');
+            return;
+        }
+        if (newPass.length < 6) {
+            showAlert('error', 'त्रुटि', 'पासवर्ड कम से कम 6 अक्षर का होना चाहिए');
             return;
         }
         if (newPass !== confirmPass) {
@@ -409,7 +411,6 @@ const RetailerProfileScreen: React.FC<ProfileScreenProps> = ({
         try {
             const formData = new FormData();
             formData.append('retailer_id', retailerId);
-            formData.append('current_password', currentPass);
             formData.append('new_password', newPass);
             formData.append('confirm_password', confirmPass);
 
@@ -422,7 +423,6 @@ const RetailerProfileScreen: React.FC<ProfileScreenProps> = ({
             if (result.success) {
                 showAlert('success', 'सफलता', 'पासवर्ड बदल दिया गया', () => {
                     openSection(null);
-                    setCurrentPass('');
                     setNewPass('');
                     setConfirmPass('');
                 });
@@ -638,23 +638,6 @@ const RetailerProfileScreen: React.FC<ProfileScreenProps> = ({
                     {activeSection === 'password' && (
                         <Animated.View style={[styles.expandablePanel, { opacity: slideAnim }]}>
                             {/* App Lock section removed as per user request */}
-
-                            <View style={styles.inputWrapper}>
-                                <Text style={styles.inputLabel}>वर्तमान पासवर्ड</Text>
-                                <View style={styles.inputContainer}>
-                                    <Ionicons name="lock-closed-outline" size={18} color="#64748b" />
-                                    <TextInput
-                                        style={styles.textInput}
-                                        placeholder="*******"
-                                        secureTextEntry={!showCurrent}
-                                        value={currentPass}
-                                        onChangeText={setCurrentPass}
-                                    />
-                                    <TouchableOpacity onPress={() => setShowCurrent(!showCurrent)}>
-                                        <Ionicons name={showCurrent ? "eye-off-outline" : "eye-outline"} size={20} color="#94a3b8" />
-                                    </TouchableOpacity>
-                                </View>
-                            </View>
 
                             <View style={styles.inputWrapper}>
                                 <Text style={styles.inputLabel}>नया पासवर्ड</Text>

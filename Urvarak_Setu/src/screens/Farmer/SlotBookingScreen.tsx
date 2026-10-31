@@ -11,7 +11,8 @@ import {
     Platform,
     ActivityIndicator,
     Dimensions,
-    BackHandler
+    BackHandler,
+    RefreshControl
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -57,6 +58,7 @@ interface SlotBookingScreenProps {
     onBack: () => void;
     farmerId?: string; // Need farmerId to fetch quota
     initialFertilizerId?: string; // Pre-selected from dashboard
+    isActive?: boolean;
 }
 
 // Helper function to get available booking dates (excluding Sundays)
@@ -81,12 +83,14 @@ export default function SlotBookingScreen({
     onConfirmBooking,
     onBack,
     farmerId = 'FARMER_123', // Fallback for dev, should be passed
-    initialFertilizerId
+    initialFertilizerId,
+    isActive = true
 }: SlotBookingScreenProps) {
-    const { prefetchedData } = useFarmerData();
+    const { prefetchedData, refreshData } = useFarmerData();
     const insets = useSafeAreaInsets();
     const [selectedDate, setSelectedDate] = useState<Date>(() => getAvailableBookingDates(1)[0] || new Date());
     const [quantities, setQuantities] = useState<Record<string, number>>({});
+    const [pullRefreshing, setPullRefreshing] = useState(false);
 
     // Initialize stocks directly from context if available to prevent flicker
     const [stocks, setStocks] = useState<FertilizerStock[]>(() => {
@@ -102,6 +106,23 @@ export default function SlotBookingScreen({
         }
         return [];
     });
+
+    // Keep stocks and counts synchronized whenever prefetchedData updates
+    useEffect(() => {
+        if (prefetchedData?.fertilizers?.length) {
+            setStocks(prefetchedData.fertilizers.map((f: any) => ({
+                id: f.id || f.name,
+                name: f.name,
+                nameHindi: f.nameHindi,
+                price: f.pricePerBag,
+                availableStock: 0,
+                userQuotaRemaining: f.quota.remainingQuantity
+            })));
+        }
+        if (prefetchedData?.counts) {
+            setCounts(prefetchedData.counts);
+        }
+    }, [prefetchedData]);
 
     // Start with loading=false if we have stocks ready
     const [loading, setLoading] = useState(stocks.length === 0 && !prefetchedData);
@@ -191,114 +212,114 @@ export default function SlotBookingScreen({
         }
     }, [initialFertilizerId, stocks]);
 
-    useEffect(() => {
-        // This flag prevents stale API responses from updating the UI
-        // when the user switches dates quickly (race condition fix)
-        let cancelled = false;
+    const fetchData = React.useCallback(async (forceNetwork = false) => {
+        const dateStr = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
 
-        const fetchData = async () => {
-            const dateStr = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
-
-            if (isInitialLoad.current && prefetchedData) {
-                isInitialLoad.current = false;
-                if (!cancelled) setDateRefreshing(true);
-            } else if (isInitialLoad.current) {
-                try {
-                    const cached = await AsyncStorage.getItem(QUOTA_CACHE_KEY);
-                    if (cancelled) return; // Date changed while reading cache — abort
-                    if (cached) {
-                        const data = JSON.parse(cached);
-                        if (data.stocks?.length) setStocks(data.stocks);
-                        if (data.counts) setCounts(data.counts);
-                        setLoading(false);
-                    } else {
-                        setLoading(true);
-                    }
-                } catch (_) {
-                    if (!cancelled) setLoading(true);
-                }
-            } else {
-                if (!cancelled) {
-                    // Show cached data instantly if available, otherwise reset and show loader
-                    if (dateCountsCache.current[dateStr]) {
-                        setCounts(dateCountsCache.current[dateStr]);
-                        setDateRefreshing(false);
-                    } else {
-                        setCounts({ daily: 0, pending: 0 });
-                        setDateRefreshing(true);
-                    }
-                }
-            }
-
+        if (!forceNetwork && isInitialLoad.current && prefetchedData) {
+            isInitialLoad.current = false;
+            setDateRefreshing(true);
+        } else if (!forceNetwork && isInitialLoad.current) {
             try {
-                const quotaRes = await apiFetch(API_ENDPOINTS.getFarmerQuota, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        farmer_id: farmerId,
-                        booking_date: dateStr
-                    })
-                });
-
-                if (cancelled) return; // Date changed while fetching — discard this response
-
-                const quotaData = await quotaRes.json();
-
-                if (cancelled) return; // Date changed while parsing — discard
-
-                let newStocks: FertilizerStock[] = [];
-
-                if (quotaData.success && quotaData.data.fertilizers) {
-                    newStocks = quotaData.data.fertilizers.map((f: any) => ({
-                        id: f.id || f.name, // prefer f.id from API (e.g., 'zinc'), fallback to f.name
-                        name: f.name,
-                        nameHindi: f.nameHindi,
-                        price: f.pricePerBag,
-                        availableStock: 0,
-                        userQuotaRemaining: f.quota.remainingQuantity
-                    }));
-                }
-
-                if (quotaData.success && quotaData.data) {
-                    const daily = quotaData.data.daily_booking_count || 0;
-                    const pending = quotaData.data.pending_booking_count || 0;
-                    const freshCounts = { daily, pending };
-                    dateCountsCache.current[dateStr] = freshCounts;
-                    setCounts(freshCounts);
-                }
-
-                setStocks(newStocks);
-
-                const todayStr = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
-                if (dateStr === todayStr) {
-                    try {
-                        await AsyncStorage.setItem(QUOTA_CACHE_KEY, JSON.stringify({
-                            stocks: newStocks,
-                            counts: quotaData?.data ? { daily: quotaData.data.daily_booking_count || 0, pending: quotaData.data.pending_booking_count || 0 } : { daily: 0, pending: 0 },
-                            timestamp: Date.now(),
-                        }));
-                    } catch (_) { }
-                }
-
-            } catch (error) {
-                if (!cancelled) {
-                    console.error("Error fetching booking data:", error);
-                    showAlert('त्रुटि', 'स्टॉक डेटा लोड करने में विफल', 'error');
-                }
-            } finally {
-                if (!cancelled) {
-                    isInitialLoad.current = false;
+                const cached = await AsyncStorage.getItem(QUOTA_CACHE_KEY);
+                if (cached) {
+                    const data = JSON.parse(cached);
+                    if (data.stocks?.length) setStocks(data.stocks);
+                    if (data.counts) setCounts(data.counts);
                     setLoading(false);
-                    setDateRefreshing(false);
+                } else {
+                    setLoading(true);
                 }
+            } catch (_) {
+                setLoading(true);
             }
-        };
+        } else {
+            if (dateCountsCache.current[dateStr] && !forceNetwork) {
+                setCounts(dateCountsCache.current[dateStr]);
+                setDateRefreshing(false);
+            } else {
+                setCounts({ daily: 0, pending: 0 });
+                setDateRefreshing(true);
+            }
+        }
 
+        try {
+            const quotaRes = await apiFetch(API_ENDPOINTS.getFarmerQuota, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    farmer_id: farmerId,
+                    booking_date: dateStr,
+                    _t: Date.now()
+                })
+            });
+
+            const quotaData = await quotaRes.json();
+
+            let newStocks: FertilizerStock[] = [];
+
+            if (quotaData.success && quotaData.data?.fertilizers) {
+                newStocks = quotaData.data.fertilizers.map((f: any) => ({
+                    id: f.id || f.name,
+                    name: f.name,
+                    nameHindi: f.nameHindi,
+                    price: f.pricePerBag,
+                    availableStock: 0,
+                    userQuotaRemaining: f.quota.remainingQuantity
+                }));
+                setStocks(newStocks);
+            }
+
+            if (quotaData.success && quotaData.data) {
+                const daily = quotaData.data.daily_booking_count || 0;
+                const pending = quotaData.data.pending_booking_count || 0;
+                const freshCounts = { daily, pending };
+                dateCountsCache.current[dateStr] = freshCounts;
+                setCounts(freshCounts);
+            }
+
+            const todayStr = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
+            if (dateStr === todayStr && newStocks.length > 0) {
+                try {
+                    await AsyncStorage.setItem(QUOTA_CACHE_KEY, JSON.stringify({
+                        stocks: newStocks,
+                        counts: quotaData?.data ? { daily: quotaData.data.daily_booking_count || 0, pending: quotaData.data.pending_booking_count || 0 } : { daily: 0, pending: 0 },
+                        timestamp: Date.now(),
+                    }));
+                } catch (_) { }
+            }
+
+        } catch (error) {
+            console.error("Error fetching booking data:", error);
+            showAlert('त्रुटि', 'स्टॉक डेटा लोड करने में विफल', 'error');
+        } finally {
+            isInitialLoad.current = false;
+            setLoading(false);
+            setDateRefreshing(false);
+        }
+    }, [selectedDate, farmerId, prefetchedData, QUOTA_CACHE_KEY]);
+
+    // Initial load and date change
+    useEffect(() => {
         fetchData();
+    }, [fetchData]);
 
-        // Cleanup: mark this fetch as stale when the date changes
-        return () => { cancelled = true; };
-    }, [selectedDate, retailer.id, farmerId]);
+    // Re-fetch fresh live quota when tab becomes active or preselected fertilizer changes
+    useEffect(() => {
+        if (isActive) {
+            fetchData(true);
+        }
+    }, [isActive, initialFertilizerId]);
+
+    const handlePullRefresh = async () => {
+        setPullRefreshing(true);
+        if (farmerId && farmerName) {
+            try {
+                await refreshData(farmerId, farmerName);
+            } catch (_) { }
+        }
+        await fetchData(true);
+        setPullRefreshing(false);
+    };
 
     const updateQuantity = (id: string, delta: number) => {
         setQuantities(prev => {
@@ -332,6 +353,11 @@ export default function SlotBookingScreen({
 
         if (items.length === 0) {
             showAlert('त्रुटि', 'कृपया कम से कम एक उर्वरक चुनें।', 'warning');
+            return;
+        }
+
+        if (!prefetchedData?.kisan_panjikaran_number || prefetchedData.kisan_panjikaran_number.trim() === '') {
+            showAlert('कृषक पंजिका कोड अनिवार्य', 'खाद बुकिंग करने के लिए कृषक पंजिका कोड भरना अनिवार्य है। कृपया पहले अपनी प्रोफाइल में जाकर कृषक पंजिका कोड दर्ज करें।', 'warning');
             return;
         }
 
@@ -474,13 +500,31 @@ export default function SlotBookingScreen({
                     <Text style={{ marginTop: SPACING.md, color: COLORS.textSecondary, fontWeight: '500' }}>डेटा लोड हो रहा है...</Text>
                 </View>
             ) : (
-                <ScrollView contentContainerStyle={styles.content}>
+                <ScrollView
+                    contentContainerStyle={[
+                        styles.content,
+                        { paddingBottom: 80 + insets.bottom + (totalBags > 0 ? 80 : SPACING.lg) }
+                    ]}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={pullRefreshing}
+                            onRefresh={handlePullRefresh}
+                            colors={[COLORS.primary]}
+                        />
+                    }
+                >
                     <Card style={styles.retailerCard}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: SPACING.sm }}>
-                            <MaterialCommunityIcons name="storefront-outline" size={24} color={COLORS.primary} style={{ marginRight: SPACING.xs }} />
-                            <Text style={styles.retailerName}>{retailerInfo.shopName || retailerInfo.shop_name || 'समिति का नाम लोड हो रहा है...'}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: SPACING.sm }}>
+                            <MaterialCommunityIcons name="storefront-outline" size={24} color={COLORS.primary} style={{ marginRight: SPACING.xs, marginTop: 2, flexShrink: 0 }} />
+                            <Text
+                                style={styles.retailerName}
+                                numberOfLines={3}
+                                maxFontSizeMultiplier={1.3}
+                            >
+                                {retailerInfo.shopName || retailerInfo.shop_name || 'समिति का नाम लोड हो रहा है...'}
+                            </Text>
                         </View>
-                        <Text style={styles.retailerAddress}>
+                        <Text style={styles.retailerAddress} maxFontSizeMultiplier={1.3}>
                             <MaterialCommunityIcons name="map-marker-outline" size={14} color={COLORS.textSecondary} /> {retailerInfo.address || retailerInfo.address_en || 'पता उपलब्ध नहीं'}
                         </Text>
                     </Card>
@@ -692,7 +736,14 @@ const styles = StyleSheet.create({
     },
     content: { paddingHorizontal: 16, paddingTop: SPACING.lg, paddingBottom: 120 },
     retailerCard: { marginBottom: SPACING.lg, padding: SPACING.lg, borderRadius: BORDER_RADIUS.xl },
-    retailerName: { fontSize: FONT_SIZES.lg, fontWeight: 'bold', color: COLORS.textPrimary },
+    retailerName: {
+        fontSize: FONT_SIZES.lg,
+        fontWeight: 'bold',
+        color: COLORS.textPrimary,
+        flex: 1,
+        flexShrink: 1,
+        lineHeight: moderateScale(24),
+    },
     retailerAddress: { fontSize: FONT_SIZES.md, color: COLORS.textSecondary, marginTop: 4, fontWeight: '500' },
     section: { marginBottom: SPACING.xl },
     sectionTitle: { fontSize: FONT_SIZES.lg, fontWeight: 'bold', marginBottom: SPACING.md, color: COLORS.textPrimary },

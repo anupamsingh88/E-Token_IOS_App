@@ -46,6 +46,7 @@ try {
     }
 
 } catch (PDOException $e) {
-    echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+    error_log("request_retailer_change error: " . $e->getMessage());
+    echo json_encode(['success' => false, 'message' => 'अनुरोध दर्ज करने में समस्या आई। कृपया पुनः प्रयास करें।']);
 }
 ?>

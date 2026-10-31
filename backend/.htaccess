@@ -3,3 +3,25 @@ RewriteCond %{HTTP:Authorization} ^(.*)
 RewriteRule .* - [e=HTTP_AUTHORIZATION:%1]
 
 SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
+
+<IfModule mod_headers.c>
+    Header set Access-Control-Allow-Origin "*"
+    Header set Access-Control-Allow-Methods "GET, POST, OPTIONS, PUT, DELETE"
+    Header set Access-Control-Allow-Headers "*"
+
+    # Aggressive caching for static image and media assets (30 days)
+    <FilesMatch "\.(ico|jpe?g|png|gif|webp|svg|mp4)$">
+        Header set Cache-Control "max-age=2592000, public"
+    </FilesMatch>
+</IfModule>
+
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType image/jpeg "access plus 30 days"
+    ExpiresByType image/jpg "access plus 30 days"
+    ExpiresByType image/png "access plus 30 days"
+    ExpiresByType image/webp "access plus 30 days"
+    ExpiresByType image/gif "access plus 30 days"
+    ExpiresByType image/svg+xml "access plus 30 days"
+    ExpiresByType video/mp4 "access plus 30 days"
+</IfModule>

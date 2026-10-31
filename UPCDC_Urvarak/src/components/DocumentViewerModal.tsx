@@ -137,10 +137,16 @@ export default function DocumentViewerModal({
             currentDocUrl.toLowerCase().includes('.pdf'))
     );
 
-    // Calculate Google Docs viewer URL for PDF
+    // Calculate PDF viewer URL
     const getPdfViewerUrl = useCallback((url: string) => {
+        if (!url) return '';
         if (Platform.OS === 'ios') {
             return url; // iOS WKWebView natively displays PDFs
+        }
+        // Use our robust self-hosted PDF viewer to avoid Google Docs viewer failure on local IPs/rate-limits
+        const match = url.match(/uploads\/[^\s\?#]+/i);
+        if (match) {
+            return `${API_BASE_URL}/view_pdf.php?file=${encodeURIComponent(match[0])}`;
         }
         return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
     }, []);
@@ -541,7 +547,7 @@ export default function DocumentViewerModal({
                                     ]}
                                 >
                                     <Image
-                                        source={{ uri: currentDocUrl }}
+                                        source={{ uri: currentDocUrl, cache: 'force-cache' }}
                                         style={styles.imageContent}
                                         resizeMode="contain"
                                         onLoadStart={() => {

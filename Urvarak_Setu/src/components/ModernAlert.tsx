@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
     Modal,
     View,
@@ -6,11 +6,18 @@ import {
     StyleSheet,
     TouchableOpacity,
     Animated,
+    Dimensions,
+    TouchableWithoutFeedback,
 } from 'react-native';
-import { COLORS, SPACING, FONT_SIZES, FONT_WEIGHTS, BORDER_RADIUS, SHADOWS } from '../constants';
-import { CheckCircleIcon, AlertCircleIcon, CloseIcon } from './PhotoUploadIcons';
-import { scale, verticalScale, moderateScale, isTablet } from '../utils/responsive';
+import { Ionicons } from '@expo/vector-icons';
+import { COLORS } from '../constants';
+import { isTablet } from '../utils/responsive';
 
+interface AlertButton {
+    text: string;
+    onPress: () => void;
+    style?: 'default' | 'cancel' | 'destructive';
+}
 
 interface ModernAlertProps {
     visible: boolean;
@@ -18,12 +25,10 @@ interface ModernAlertProps {
     message: string;
     type?: 'success' | 'error' | 'warning' | 'info';
     onClose: () => void;
-    buttons?: Array<{
-        text: string;
-        onPress: () => void;
-        style?: 'default' | 'cancel' | 'destructive';
-    }>;
+    buttons?: AlertButton[];
 }
+
+const { width } = Dimensions.get('window');
 
 export const ModernAlert: React.FC<ModernAlertProps> = ({
     visible,
@@ -33,115 +38,148 @@ export const ModernAlert: React.FC<ModernAlertProps> = ({
     onClose,
     buttons = [{ text: 'ठीक है', onPress: onClose, style: 'default' }],
 }) => {
-    const scaleValue = React.useRef(new Animated.Value(0)).current;
+    const scaleAnim = useRef(new Animated.Value(0.85)).current;
+    const fadeAnim = useRef(new Animated.Value(0)).current;
 
-    React.useEffect(() => {
+    useEffect(() => {
         if (visible) {
-            Animated.spring(scaleValue, {
-                toValue: 1,
-                tension: 50,
-                friction: 7,
-                useNativeDriver: true,
-            }).start();
+            Animated.parallel([
+                Animated.timing(fadeAnim, {
+                    toValue: 1,
+                    duration: 200,
+                    useNativeDriver: true,
+                }),
+                Animated.spring(scaleAnim, {
+                    toValue: 1,
+                    tension: 65,
+                    friction: 7,
+                    useNativeDriver: true,
+                }),
+            ]).start();
         } else {
-            scaleValue.setValue(0);
+            Animated.parallel([
+                Animated.timing(fadeAnim, {
+                    toValue: 0,
+                    duration: 150,
+                    useNativeDriver: true,
+                }),
+                Animated.timing(scaleAnim, {
+                    toValue: 0.85,
+                    duration: 150,
+                    useNativeDriver: true,
+                }),
+            ]).start();
         }
     }, [visible]);
 
-    const getIconColor = () => {
+    const getTheme = () => {
         switch (type) {
             case 'success':
-                return COLORS.success;
+                return {
+                    icon: 'checkmark-circle' as const,
+                    color: '#16A34A',
+                    bgLight: '#DCFCE7',
+                    btnBg: '#16A34A',
+                };
             case 'error':
-                return COLORS.error;
+                return {
+                    icon: 'close-circle' as const,
+                    color: '#DC2626',
+                    bgLight: '#FEE2E2',
+                    btnBg: '#DC2626',
+                };
             case 'warning':
-                return COLORS.warning;
+                return {
+                    icon: 'alert-circle' as const,
+                    color: '#D97706',
+                    bgLight: '#FEF3C7',
+                    btnBg: '#D97706',
+                };
             default:
-                return COLORS.primary;
+                return {
+                    icon: 'information-circle' as const,
+                    color: COLORS.primary || '#15803D',
+                    bgLight: '#E0F2FE',
+                    btnBg: COLORS.primary || '#15803D',
+                };
         }
     };
 
-    const getBackgroundColor = () => {
-        switch (type) {
-            case 'success':
-                return COLORS.success + '10';
-            case 'error':
-                return COLORS.error + '10';
-            case 'warning':
-                return COLORS.warning + '10';
-            default:
-                return COLORS.primary + '10';
-        }
-    };
+    const theme = getTheme();
 
     return (
         <Modal
             transparent
             visible={visible}
-            animationType="fade"
+            animationType="none"
             onRequestClose={onClose}
+            statusBarTranslucent
         >
-            <View style={styles.overlay}>
-                <Animated.View
-                    style={[
-                        styles.alertContainer,
-                        { transform: [{ scale: scaleValue }] },
-                    ]}
-                >
-                    {/* Close Button - Top Right */}
-                    <TouchableOpacity
-                        style={styles.closeButton}
-                        onPress={onClose}
-                        activeOpacity={0.7}
-                    >
-                        <CloseIcon size={isTablet ? 24 : 20} color={COLORS.textSecondary} />
-                    </TouchableOpacity>
+            <TouchableWithoutFeedback onPress={onClose}>
+                <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
+                    <TouchableWithoutFeedback>
+                        <Animated.View
+                            style={[
+                                styles.card,
+                                {
+                                    transform: [{ scale: scaleAnim }],
+                                },
+                            ]}
+                        >
+                            {/* Top Decorative Icon Badge */}
+                            <View style={[styles.outerIconRing, { backgroundColor: theme.bgLight }]}>
+                                <View style={styles.innerIconCircle}>
+                                    <Ionicons name={theme.icon} size={36} color={theme.color} />
+                                </View>
+                            </View>
 
-                    {/* Icon Section - Compact */}
-                    <View style={[styles.iconContainer, { backgroundColor: getBackgroundColor() }]}>
-                        {type === 'success' ? (
-                            <CheckCircleIcon size={isTablet ? 38 : 30} color={getIconColor()} />
-                        ) : (
-                            <AlertCircleIcon size={isTablet ? 36 : 28} color={getIconColor()} />
-                        )}
-                    </View>
+                            {/* Title & Message */}
+                            <Text style={styles.title} maxFontSizeMultiplier={1.3}>
+                                {title}
+                            </Text>
+                            <Text style={styles.message} maxFontSizeMultiplier={1.3}>
+                                {message}
+                            </Text>
 
-                    {/* Content Section */}
-                    <View style={styles.contentContainer}>
-                        <Text style={styles.title}>{title}</Text>
-                        <Text style={styles.message}>{message}</Text>
-                    </View>
+                            {/* Action Buttons */}
+                            <View style={styles.buttonRow}>
+                                {buttons.map((btn, idx) => {
+                                    const isCancel = btn.style === 'cancel';
+                                    const isDestructive = btn.style === 'destructive';
+                                    const isPrimary = !isCancel && !isDestructive;
 
-                    {/* Buttons Section - Modern Styling */}
-                    <View style={styles.buttonsContainer}>
-                        {buttons.map((button, index) => (
-                            <TouchableOpacity
-                                key={index}
-                                style={[
-                                    styles.button,
-                                    button.style === 'cancel' && styles.cancelButton,
-                                    button.style === 'destructive' && styles.destructiveButton,
-                                ]}
-                                onPress={() => {
-                                    button.onPress();
-                                    onClose();
-                                }}
-                                activeOpacity={0.8}
-                            >
-                                <Text
-                                    style={[
-                                        styles.buttonText,
-                                        button.style === 'cancel' && styles.cancelButtonText,
-                                        button.style === 'destructive' && styles.destructiveButtonText,
-                                    ]}
-                                >
-                                    {button.text}
-                                </Text>
-                            </TouchableOpacity>
-                        ))}
-                    </View>
+                                    return (
+                                        <TouchableOpacity
+                                            key={idx}
+                                            style={[
+                                                styles.button,
+                                                isCancel && styles.cancelButton,
+                                                isDestructive && styles.destructiveButton,
+                                                isPrimary && { backgroundColor: theme.btnBg },
+                                            ]}
+                                            onPress={() => {
+                                                btn.onPress();
+                                                onClose();
+                                            }}
+                                            activeOpacity={0.85}
+                                        >
+                                            <Text
+                                                style={[
+                                                    styles.buttonText,
+                                                    isCancel && styles.cancelButtonText,
+                                                ]}
+                                                maxFontSizeMultiplier={1.3}
+                                            >
+                                                {btn.text}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                            </View>
+                        </Animated.View>
+                    </TouchableWithoutFeedback>
                 </Animated.View>
-            </View>
+            </TouchableWithoutFeedback>
         </Modal>
     );
 };
@@ -149,102 +187,99 @@ export const ModernAlert: React.FC<ModernAlertProps> = ({
 const styles = StyleSheet.create({
     overlay: {
         flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.4)', // Slightly lighter overlay
+        backgroundColor: 'rgba(15, 23, 42, 0.65)',
         justifyContent: 'center',
         alignItems: 'center',
-        padding: isTablet ? SPACING.xxl : SPACING.lg, // Reduced padding for overlay
+        padding: 24,
     },
-    alertContainer: {
-        backgroundColor: COLORS.white,
-        borderRadius: isTablet ? 28 : 24, // More rounded
+    card: {
         width: '100%',
-        maxWidth: isTablet ? 460 : 340,
-        ...SHADOWS.large,
-        paddingTop: isTablet ? 24 : SPACING.lg,
-        overflow: 'hidden',
-        position: 'relative', // For absolute positioning of close button
+        maxWidth: isTablet ? 420 : Math.min(width * 0.88, 350),
+        backgroundColor: '#FFFFFF',
+        borderRadius: 24,
+        paddingHorizontal: 22,
+        paddingTop: 26,
+        paddingBottom: 22,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#F1F5F9',
+        shadowColor: '#0F172A',
+        shadowOffset: { width: 0, height: 12 },
+        shadowOpacity: 0.18,
+        shadowRadius: 24,
+        elevation: 12,
     },
-    closeButton: {
-        position: 'absolute',
-        top: isTablet ? 14 : 12,
-        right: isTablet ? 14 : 12,
-        padding: isTablet ? 10 : 8,
-        zIndex: 10,
-        backgroundColor: '#F5F5F5', // Light background circle
-        borderRadius: 20,
-    },
-    iconContainer: {
-        alignSelf: 'center',
-        width: isTablet ? 60 : 44,
-        height: isTablet ? 60 : 44,
-        borderRadius: isTablet ? 30 : 22,
+    outerIconRing: {
+        width: 72,
+        height: 72,
+        borderRadius: 36,
         alignItems: 'center',
         justifyContent: 'center',
-        marginBottom: isTablet ? SPACING.lg : SPACING.md,
+        marginBottom: 16,
     },
-    contentContainer: {
-        paddingHorizontal: isTablet ? SPACING.xl : SPACING.md,
-        paddingBottom: isTablet ? SPACING.md : SPACING.sm,
+    innerIconCircle: {
+        width: 52,
+        height: 52,
+        borderRadius: 26,
+        backgroundColor: '#FFFFFF',
         alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 4,
+        elevation: 2,
     },
     title: {
-        fontSize: isTablet ? 22 : FONT_SIZES.lg,
-        fontWeight: '700', // Bold
-        color: COLORS.textPrimary,
-        marginBottom: isTablet ? 14 : 12,
+        fontSize: isTablet ? 22 : 19,
+        fontWeight: '800',
+        color: '#0F172A',
         textAlign: 'center',
+        marginBottom: 8,
+        letterSpacing: 0.2,
     },
     message: {
-        fontSize: isTablet ? 16 : FONT_SIZES.sm,
-        color: COLORS.textSecondary,
+        fontSize: isTablet ? 16 : 14.5,
+        color: '#475569',
         textAlign: 'center',
-        lineHeight: isTablet ? 26 : 22,
-        paddingTop: 5,
-        paddingHorizontal: isTablet ? 14 : 8,
+        lineHeight: isTablet ? 24 : 22,
+        marginBottom: 22,
+        paddingHorizontal: 6,
     },
-    // Update styles for better button layout
-    buttonsContainer: {
+    buttonRow: {
         flexDirection: 'row',
-        padding: isTablet ? SPACING.lg : SPACING.md,
-        gap: isTablet ? 16 : 12,
-        backgroundColor: '#F9FAFB',
-        borderTopWidth: 1,
-        borderTopColor: '#EEEEEE',
+        width: '100%',
+        gap: 10,
     },
     button: {
         flex: 1,
-        paddingVertical: isTablet ? 15 : 12,
+        paddingVertical: 13,
+        paddingHorizontal: 16,
+        borderRadius: 14,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: COLORS.primary,
-        borderRadius: isTablet ? 14 : 12,
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: moderateScale(0), height: 2 },
-        shadowOpacity: 0.2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
         shadowRadius: 4,
-        elevation: 3,
-        marginHorizontal: 4,
+        elevation: 2,
     },
     cancelButton: {
-        backgroundColor: '#FFFFFF',
-        borderWidth: 1,
-        borderColor: '#E0E0E0',
-        elevation: 0, // Flat for cancel
+        backgroundColor: '#F1F5F9',
+        elevation: 0,
         shadowOpacity: 0,
     },
     destructiveButton: {
-        backgroundColor: COLORS.error,
-        shadowColor: COLORS.error,
+        backgroundColor: '#DC2626',
     },
     buttonText: {
-        fontSize: isTablet ? 17 : FONT_SIZES.md,
-        fontWeight: '600',
-        color: COLORS.white,
+        fontSize: 15,
+        fontWeight: '700',
+        color: '#FFFFFF',
     },
     cancelButtonText: {
-        color: COLORS.textSecondary,
-    },
-    destructiveButtonText: {
-        color: COLORS.white,
+        color: '#475569',
     },
 });
+
+export default ModernAlert;

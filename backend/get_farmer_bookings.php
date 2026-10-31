@@ -3,6 +3,7 @@ header('Content-Type: application/json');
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Headers: Content-Type");
 require_once 'db_connect.php';
+require_once 'auto_cancel_helper.php';
 
 $input = json_decode(file_get_contents('php://input'), true);
 $farmer_id = isset($input['farmer_id']) ? $input['farmer_id'] : (isset($_GET['farmer_id']) ? $_GET['farmer_id'] : '');
@@ -13,6 +14,9 @@ if (!$farmer_id) {
 }
 
 try {
+    // Auto-cancel any expired bookings for this farmer (Pending or Approved whose date has passed)
+    autoCancelExpiredBookings($conn, null, $farmer_id);
+
     $sql = "SELECT 
                 b.id,
                 b.booking_date,
@@ -22,12 +26,17 @@ try {
                 b.status,
                 b.token_number,
                 b.order_id,
+                b.cancellation_reason,
+                b.cancelled_by,
+                b.extension_reason,
                 b.created_at,
                 b.retailer_name as stored_retailer_name,
                 COALESCE(r.name, b.retailer_name) as retailer_name,
                 COALESCE(r.shop_name, b.retailer_name) as shop_name,
                 COALESCE(r.address, '') as retailer_address,
                 COALESCE(f.district_id, '') as district_id,
+                f.registry_id,
+                f.kisan_panjikaran_number,
                 r.mobile as retailer_mobile
             FROM product_bookings b
             LEFT JOIN retailer_info r ON b.retailer_id = r.retailer_id
@@ -57,6 +66,12 @@ try {
                 'booking_date' => $row['booking_date'],
                 'status' => $row['status'],
                 'token_number' => $row['token_number'],
+                'registry_id' => $row['registry_id'] ?? null,
+                'kisan_panjikaran_number' => $row['kisan_panjikaran_number'] ?? null,
+                'kisan_code' => $row['kisan_panjikaran_number'] ?? null,
+                'cancellation_reason' => $row['cancellation_reason'] ?? null,
+                'cancelled_by' => $row['cancelled_by'] ?? null,
+                'extension_reason' => $row['extension_reason'] ?? null,
                 'created_at' => $row['created_at'],
                 'retailer_name' => $row['retailer_name'],
                 'shop_name' => $row['shop_name'],
@@ -64,6 +79,18 @@ try {
                 'retailer_mobile' => $row['retailer_mobile'],
                 'items' => []
             ];
+        }
+
+        if (empty($grouped[$group_key]['cancellation_reason']) && !empty($row['cancellation_reason'])) {
+            $grouped[$group_key]['cancellation_reason'] = $row['cancellation_reason'];
+        }
+
+        if (empty($grouped[$group_key]['cancelled_by']) && !empty($row['cancelled_by'])) {
+            $grouped[$group_key]['cancelled_by'] = $row['cancelled_by'];
+        }
+
+        if (empty($grouped[$group_key]['extension_reason']) && !empty($row['extension_reason'])) {
+            $grouped[$group_key]['extension_reason'] = $row['extension_reason'];
         }
 
         $grouped[$group_key]['items'][] = [
