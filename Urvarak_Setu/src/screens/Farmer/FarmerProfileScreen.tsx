@@ -28,7 +28,7 @@ import { API_ENDPOINTS, API_BASE_URL } from '../../config/config';
 import { apiFetch } from '../../utils/apiClient';
 import ParticleBackground from '../../components/ParticleBackground';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { compressImage, ensureCameraPermission } from '../../utils/imagePickerUtils';
+import { compressImage, ensureCameraPermission, waitForModalDismiss } from '../../utils/imagePickerUtils';
 import CustomImageCropper from '../../components/CustomImageCropper';
 import { scale, verticalScale, moderateScale } from '../../utils/responsive';
 import { useFarmerData } from '../../contexts/FarmerDataContext';
@@ -172,6 +172,7 @@ export default function FarmerProfileScreen({ farmerName, farmerId, onLogout, on
         const hasPerm = await ensureCameraPermission();
         if (!hasPerm) return;
         try {
+            await waitForModalDismiss();
             const result = await ImagePicker.launchCameraAsync({
                 quality: 0.8,
             });
@@ -191,6 +192,7 @@ export default function FarmerProfileScreen({ farmerName, farmerId, onLogout, on
     const handlePickGallery = async () => {
         setPickerModalVisible(false);
         try {
+            await waitForModalDismiss();
             const result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ImagePicker.MediaTypeOptions.Images,
                 quality: 0.8,
@@ -211,6 +213,7 @@ export default function FarmerProfileScreen({ farmerName, farmerId, onLogout, on
     const handlePickPdf = async () => {
         setPickerModalVisible(false);
         try {
+            await waitForModalDismiss();
             const result = await DocumentPicker.getDocumentAsync({
                 type: 'application/pdf',
                 copyToCacheDirectory: true,

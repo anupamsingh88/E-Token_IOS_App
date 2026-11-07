@@ -41,6 +41,7 @@
         "android.permission.READ_MEDIA_VISUAL_USER_SELECTED"
       ],
       "permissions": [
+        "android.permission.POST_NOTIFICATIONS",
         "android.permission.CAMERA"
       ]
     },

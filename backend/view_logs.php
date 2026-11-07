@@ -67,34 +67,6 @@ if (!isset($_SESSION['log_auth'])) {
 // Logged in - show dashboard
 require 'db_connect.php';
 
-// Auto-create app_logs table if it doesn't exist yet
-$conn->query("CREATE TABLE IF NOT EXISTS app_logs (
-    id          INT AUTO_INCREMENT PRIMARY KEY,
-    log_level   VARCHAR(10)  NOT NULL DEFAULT 'INFO',
-    message     TEXT,
-    api_url     VARCHAR(500),
-    method      VARCHAR(10),
-    request_body TEXT,
-    status_code INT,
-    response    TEXT,
-    error_msg   TEXT,
-    farmer_id   VARCHAR(50),
-    retailer_id VARCHAR(50),
-    device_info VARCHAR(300),
-    app_version VARCHAR(20),
-    created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_level      (log_level),
-    INDEX idx_farmer     (farmer_id),
-    INDEX idx_retailer   (retailer_id),
-    INDEX idx_created_at (created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-
-// Alter existing table to add retailer_id if it doesn't exist
-$checkCol = $conn->query("SHOW COLUMNS FROM app_logs LIKE 'retailer_id'");
-if ($checkCol && $checkCol->num_rows === 0) {
-    $conn->query("ALTER TABLE app_logs ADD COLUMN retailer_id VARCHAR(50) AFTER farmer_id");
-}
-
 // Filters
 $filter_level   = $_GET['level']   ?? 'ALL';
 $filter_farmer  = $_GET['farmer']  ?? '';

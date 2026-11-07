@@ -49,16 +49,6 @@ $otp_submitted = trim($input['otp'] ?? '');
 $mpin_submitted = trim($input['mpin'] ?? '');
 
 try {
-    // Gracefully ensure mpin column exists in farmer_info
-    try {
-        $colCheck = $pdo->query("SHOW COLUMNS FROM farmer_info LIKE 'mpin'");
-        if ($colCheck->rowCount() === 0) {
-            $pdo->exec("ALTER TABLE farmer_info ADD COLUMN mpin VARCHAR(255) NULL DEFAULT NULL");
-        }
-    } catch (Exception $colEx) {
-        // Continue even if SHOW COLUMNS or ALTER fails due to permissions
-    }
-
     // Action 1: Check Farmer and MPIN Status
     if ($action === 'check_status') {
         $stmt = $pdo->prepare("SELECT farmer_id, name, mobile, status, mpin FROM farmer_info WHERE mobile = ? ORDER BY id DESC LIMIT 1");

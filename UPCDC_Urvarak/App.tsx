@@ -91,15 +91,30 @@ function RootNavigator() {
 
     const requestAllPermissions = async () => {
       try {
-        await requestNotificationPermission();
+        const token = await requestNotificationPermission();
+        if (token && savedRetailerId) {
+          fetch(`${API_BASE_URL}/update_fcm_token.php`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user_type: 'retailer',
+              user_id: savedRetailerId,
+              fcm_token: token
+            })
+          }).catch(e => console.error('FCM update error:', e));
+        }
+
         await Notifications.dismissAllNotificationsAsync();
         if (Platform.OS === 'android') {
           await Notifications.setNotificationChannelAsync('default', {
-            name: 'Default',
+            name: 'Booking & Status Updates',
             importance: Notifications.AndroidImportance.MAX,
             vibrationPattern: [0, 250, 250, 250],
             lightColor: '#FF231F7C',
-            showBadge: false,
+            sound: 'default',
+            showBadge: true,
+            enableVibrate: true,
+            enableLights: true,
           });
           await Notifications.setBadgeCountAsync(0);
         }
@@ -113,16 +128,45 @@ function RootNavigator() {
   }, []);
 
   useEffect(() => {
+    // 1. Foreground notification popup banner
     const unsubscribe = messaging().onMessage(async remoteMessage => {
-      Notifications.scheduleNotificationAsync({
-        content: {
-          title: remoteMessage.notification?.title || 'New Notification',
-          body: remoteMessage.notification?.body,
-          data: remoteMessage.data,
-          sound: true,
-        },
-        trigger: null,
-      });
+      try {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: remoteMessage.notification?.title || 'नई सूचना',
+            body: remoteMessage.notification?.body || '',
+            data: remoteMessage.data || {},
+            sound: 'default',
+            priority: Notifications.AndroidNotificationPriority.MAX,
+            vibrate: [0, 250, 250, 250],
+          },
+          trigger: {
+            channelId: 'default',
+          } as any,
+        });
+      } catch (e) {
+        console.error('Error in retailer foreground notification:', e);
+      }
+    });
+
+    // 2. Refresh token sync for retailer
+    const unsubscribeTokenRefresh = messaging().onTokenRefresh(async (newToken) => {
+      try {
+        const savedRetailerId = await AsyncStorage.getItem(SESSION_KEY);
+        if (savedRetailerId) {
+          await fetch(`${API_BASE_URL}/update_fcm_token.php`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user_type: 'retailer',
+              user_id: savedRetailerId,
+              fcm_token: newToken
+            })
+          });
+        }
+      } catch (e) {
+        console.error('Error syncing retailer refreshed token:', e);
+      }
     });
 
     const responseSubscription = Notifications.addNotificationResponseReceivedListener(async response => {
@@ -137,6 +181,7 @@ function RootNavigator() {
 
     return () => {
       unsubscribe();
+      unsubscribeTokenRefresh();
       responseSubscription.remove();
       appStateSubscription.remove();
     };

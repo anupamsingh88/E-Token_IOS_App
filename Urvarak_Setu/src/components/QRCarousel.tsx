@@ -77,7 +77,7 @@ const QRCarousel = React.memo(({ bookings, onPress }: QRCarouselProps) => {
                                         <Text style={{ fontSize: Math.round(qrSize * 0.32) }}>❌</Text>
                                         <Text style={{ fontSize: moderateScale(11), color: COLORS.error, fontWeight: 'bold', marginTop: 2, textAlign: 'center' }}>
                                             {(booking.cancelled_by === 'SYSTEM_AUTO' || booking.cancellation_reason?.includes('स्वतः रद्द') || booking.cancellation_reason?.includes('किसान के न पहुँचने'))
-                                                ? 'स्वतः रद्द हुआ'
+                                                ? 'स्वतः रद्द हुई'
                                                 : 'रद्द किया गया'}
                                         </Text>
                                     </View>

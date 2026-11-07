@@ -21,6 +21,19 @@ if (!$farmer_id) {
     exit;
 }
 
+// Support direct S3 URL update if uploaded directly from mobile app
+if (!empty($_POST['photo_url'])) {
+    $photo_url = trim($_POST['photo_url']);
+    $stmt = $pdo->prepare("UPDATE farmer_info SET profile_photo = ? WHERE farmer_id = ?");
+    $stmt->execute([$photo_url, $farmer_id]);
+    echo json_encode([
+        'success'   => true,
+        'message'   => 'Photo URL registered successfully',
+        'photo_url' => $photo_url
+    ]);
+    exit;
+}
+
 if (!isset($_FILES['photo'])) {
     echo json_encode(['success' => false, 'message' => 'No photo field. Files: ' . json_encode(array_keys($_FILES))]);
     exit;

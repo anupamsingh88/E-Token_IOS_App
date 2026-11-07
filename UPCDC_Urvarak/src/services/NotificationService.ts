@@ -13,14 +13,17 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// Required for Android notifications to show up
+// Required for Android notifications to show up with Heads-Up Popup banner
 if (Platform.OS === 'android') {
   Notifications.setNotificationChannelAsync('default', {
-    name: 'default',
+    name: 'Booking & Status Updates',
     importance: Notifications.AndroidImportance.MAX,
     vibrationPattern: [0, 250, 250, 250],
     lightColor: '#FF231F7C',
-    showBadge: false,
+    sound: 'default',
+    showBadge: true,
+    enableVibrate: true,
+    enableLights: true,
   });
 }
 

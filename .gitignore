@@ -1,4 +1,4 @@
-﻿# ==============================================
+# ==============================================
 # ROOT LEVEL: Ignore everything, then whitelist
 # ==============================================
 *
@@ -25,6 +25,8 @@ google-services.json
 GoogleService-Info.plist
 **/env.php
 **/db_connect.php
+**/.env
+.env
 
 # ==============================================
 # DEPENDENCIES (recreated via npm install)

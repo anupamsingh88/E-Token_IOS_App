@@ -10,7 +10,30 @@ export interface StockItem {
     nameHindi: string;
     stock: number;
     price: number;
+    status?: 'AVAILABLE' | 'LOW_STOCK' | 'OUT_OF_STOCK';
+    is_out_of_stock?: boolean;
     imageUrl?: string | null;
+}
+
+export interface CapacityStatus {
+    base_capacity: number;
+    effective_capacity: number;
+    active_queue: number;
+    collected_today: number;
+    remaining_slots: number;
+    is_active: number;
+    is_holiday: number;
+    is_full: number;
+    effective_active: number;
+    closure_reason: string | null;
+    schedule_date: string;
+}
+
+export interface StockSummary {
+    total_storage_capacity: number;
+    current_total_stock: number;
+    utilization_percent: number;
+    has_out_of_stock: boolean;
 }
 
 export interface RequestCounts {
@@ -18,6 +41,8 @@ export interface RequestCounts {
     bookings: { pending: number; approved: number; cancelled: number; extended: number; collected: number };
     stock: Record<string, number>;
     stock_items?: StockItem[];
+    stock_summary?: StockSummary;
+    capacity_status?: CapacityStatus;
     total_farmers: number;
 }
 
@@ -149,6 +174,8 @@ export const RetailerDataProvider: React.FC<{ children: ReactNode }> = ({ childr
                     },
                     stock: data.current_stock || { urea: 0, dap: 0, npk: 0, mop: 0 },
                     stock_items: data.stock_items || [],
+                    stock_summary: data.stock_summary || undefined,
+                    capacity_status: data.capacity_status || undefined,
                     total_farmers: totalFarmers
                 };
 

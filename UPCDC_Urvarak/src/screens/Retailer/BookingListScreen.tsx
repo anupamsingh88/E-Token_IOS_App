@@ -504,23 +504,30 @@ export default function BookingListScreen({ retailerId, retailerDetails, onBack 
                                 <Ionicons name="person" size={20} color="#FF9800" />
                             )}
                         </View>
-                        <View style={{ flex: 1 }}>
+                        <View style={{ flex: 1, minWidth: 0 }}>
                             <Text style={styles.farmerName} numberOfLines={1}>{item.full_name}</Text>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2, flexWrap: 'wrap' }}>
                                 <Text style={styles.farmerDetail}>{item.phone}</Text>
                                 {item.order_id && (
                                     <>
-                                        <View style={{ width: 1, height: 12, backgroundColor: '#cbd5e1', marginHorizontal: 8 }} />
-                                        <Text style={styles.orderIdText}>{item.order_id}</Text>
+                                        <View style={{ width: 1, height: 12, backgroundColor: '#cbd5e1', marginHorizontal: 6 }} />
+                                        <Text style={styles.orderIdText} numberOfLines={1}>{item.order_id}</Text>
                                     </>
                                 )}
                             </View>
                             {!!item.registry_id && (
-                                <Text style={[styles.farmerDetail, { marginTop: 4, fontWeight: '700', color: COLORS.primary }]}>
+                                <Text style={[styles.farmerDetail, { marginTop: 3, fontWeight: '700', color: COLORS.primary }]} numberOfLines={1}>
                                     रजिस्ट्री आईडी: {item.registry_id}
                                 </Text>
                             )}
-                            <Text style={[styles.farmerDetail, { marginTop: 2, fontWeight: '700', color: (item.kisan_panjikaran_number || item.kisan_code) ? '#15803D' : '#DC2626' }]}>
+                            <Text 
+                                style={[
+                                    styles.farmerDetail, 
+                                    { marginTop: 2, fontWeight: '700', color: (item.kisan_panjikaran_number || item.kisan_code) ? '#15803D' : '#DC2626' }
+                                ]}
+                                numberOfLines={1}
+                                ellipsizeMode="tail"
+                            >
                                 कृषक पंजिका कोड: {(item.kisan_panjikaran_number || item.kisan_code) ? (item.kisan_panjikaran_number || item.kisan_code) : 'उपलब्ध नहीं'}
                             </Text>
                         </View>
@@ -528,38 +535,103 @@ export default function BookingListScreen({ retailerId, retailerDetails, onBack 
                 </View>
 
                 <View style={styles.bookingDetails}>
-                    <View style={styles.detailRow}>
-                        <View style={styles.detailItem}>
-                            <Ionicons name="calendar" size={16} color={item.status?.toLowerCase() === 'collected' ? COLORS.success : "#FF9800"} />
-                            <Text style={[styles.detailText, { fontWeight: '800', color: item.status?.toLowerCase() === 'collected' ? COLORS.success : "#FF9800" }]}>
-                                {item.status?.toLowerCase() === 'collected' ? 'वितरित तिथि:' : 'बुकिंग तिथि:'} {item.status?.toLowerCase() === 'collected' ? (item.collected_at || item.booking_date) : item.booking_date}
-                            </Text>
-                        </View>
-                        {item.created_at && (
-                            <View style={styles.detailItem}>
-                                <Ionicons name="time-outline" size={14} color="#64748b" />
-                                <Text style={[styles.detailText, { fontSize: 12 }]}>अनुरोध: {item.created_at}</Text>
+                    {/* Row 1: Dates (2-column balanced grid) */}
+                    <View style={styles.detailGridRow}>
+                        <View style={styles.detailGridCol}>
+                            <View style={[styles.detailIconCircle, { backgroundColor: item.status?.toLowerCase() === 'collected' ? 'rgba(34, 197, 94, 0.12)' : 'rgba(255, 152, 0, 0.12)' }]}>
+                                <Ionicons 
+                                    name="calendar" 
+                                    size={15} 
+                                    color={item.status?.toLowerCase() === 'collected' ? COLORS.success : "#EA580C"} 
+                                />
                             </View>
-                        )}
-                    </View>
-                    <View style={styles.detailRow}>
-                        <View style={styles.detailItem}>
-                            <MaterialCommunityIcons name="layers-outline" size={16} color={COLORS.textSecondary} />
-                            <Text style={styles.detailText}>खतौनी: {item.khatauni_no || 'N/A'}</Text>
+                            <View style={styles.detailTextCol}>
+                                <Text style={styles.detailLabel}>
+                                    {item.status?.toLowerCase() === 'collected' ? 'वितरित तिथि' : 'बुकिंग तिथि'}
+                                </Text>
+                                <Text 
+                                    style={[
+                                        styles.detailValue, 
+                                        { color: item.status?.toLowerCase() === 'collected' ? COLORS.success : "#EA580C", fontWeight: '800' }
+                                    ]}
+                                    numberOfLines={1}
+                                    adjustsFontSizeToFit={true}
+                                    minimumFontScale={0.85}
+                                >
+                                    {item.status?.toLowerCase() === 'collected' ? (item.collected_at || item.booking_date) : item.booking_date}
+                                </Text>
+                            </View>
                         </View>
-                        <View style={styles.detailItem}>
-                            <Ionicons name="leaf-outline" size={16} color={COLORS.textSecondary} />
-                            <Text style={styles.detailText}>जमीन: {item.land_acres || '0'} हेक्टेयर</Text>
+
+                        {item.created_at ? (
+                            <View style={styles.detailGridCol}>
+                                <View style={[styles.detailIconCircle, { backgroundColor: 'rgba(100, 116, 139, 0.1)' }]}>
+                                    <Ionicons name="time-outline" size={15} color="#64748b" />
+                                </View>
+                                <View style={styles.detailTextCol}>
+                                    <Text style={styles.detailLabel}>अनुरोध तिथि</Text>
+                                    <Text 
+                                        style={[styles.detailValue, { color: '#64748b' }]}
+                                        numberOfLines={1}
+                                        adjustsFontSizeToFit={true}
+                                        minimumFontScale={0.85}
+                                    >
+                                        {item.created_at}
+                                    </Text>
+                                </View>
+                            </View>
+                        ) : null}
+                    </View>
+
+                    <View style={styles.detailDivider} />
+
+                    {/* Row 2: Khatauni & Land Area (2-column balanced grid) */}
+                    <View style={styles.detailGridRow}>
+                        <View style={styles.detailGridCol}>
+                            <View style={[styles.detailIconCircle, { backgroundColor: 'rgba(100, 116, 139, 0.1)' }]}>
+                                <MaterialCommunityIcons name="layers-outline" size={15} color="#64748b" />
+                            </View>
+                            <View style={styles.detailTextCol}>
+                                <Text style={styles.detailLabel}>खतौनी संख्या</Text>
+                                <Text 
+                                    style={styles.detailValue}
+                                    numberOfLines={1}
+                                    ellipsizeMode="tail"
+                                >
+                                    {item.khatauni_no || 'उपलब्ध नहीं'}
+                                </Text>
+                            </View>
+                        </View>
+
+                        <View style={styles.detailGridCol}>
+                            <View style={[styles.detailIconCircle, { backgroundColor: 'rgba(21, 128, 61, 0.1)' }]}>
+                                <Ionicons name="leaf-outline" size={15} color="#15803D" />
+                            </View>
+                            <View style={styles.detailTextCol}>
+                                <Text style={styles.detailLabel}>जमीन रकबा</Text>
+                                <Text 
+                                    style={styles.detailValue}
+                                    numberOfLines={1}
+                                    ellipsizeMode="tail"
+                                >
+                                    {item.land_acres ? `${item.land_acres} हेक्टेयर` : '0 हेक्टेयर'}
+                                </Text>
+                            </View>
                         </View>
                     </View>
+
                     {item.token_number && (
-                        <View style={styles.detailRow}>
-                            <View style={styles.detailItem}>
-                                <Ionicons name="receipt-outline" size={16} color={COLORS.success} />
-                                <Text style={[styles.detailText, { color: COLORS.success, fontWeight: '800' }]}>टोकन: {item.token_number}</Text>
+                        <View style={styles.tokenRow}>
+                            <View style={[styles.detailIconCircle, { backgroundColor: 'rgba(34, 197, 94, 0.12)' }]}>
+                                <Ionicons name="receipt-outline" size={15} color={COLORS.success} />
+                            </View>
+                            <View style={styles.detailTextCol}>
+                                <Text style={styles.detailLabel}>टोकन नंबर</Text>
+                                <Text style={[styles.detailValue, { color: COLORS.success, fontWeight: '800' }]}>{item.token_number}</Text>
                             </View>
                         </View>
                     )}
+
                     {item.isDateViolated && (
                         <View style={styles.queueWarningBadge}>
                             <Ionicons name="alert-circle" size={15} color="#DC2626" />
@@ -651,12 +723,12 @@ export default function BookingListScreen({ retailerId, retailerDetails, onBack 
                                         setCancelModal({ visible: true, data: item, reason: '' }); 
                                     }}
                                 >
-                                    <MaterialCommunityIcons name="close-circle-outline" size={18} color={COLORS.error} />
-                                    <Text style={[styles.btnText3, { color: COLORS.error }]}>रद्द करें</Text>
+                                    <MaterialCommunityIcons name="close-circle-outline" size={17} color={COLORS.error} />
+                                    <Text style={[styles.btnText3, { color: COLORS.error }]} numberOfLines={1}>रद्द करें</Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity style={[styles.actionBtn3, styles.extendBtn]} onPress={(e) => { e.stopPropagation(); setSelectedExtensionDate(''); setExtendingItem(item); setCalendarMonth(new Date()); setShowExtensionCalendar(true); }}>
-                                    <MaterialCommunityIcons name="calendar-clock" size={18} color="#FF9800" />
-                                    <Text style={[styles.btnText3, { color: "#FF9800" }]}>समय बढ़ाएं</Text>
+                                    <MaterialCommunityIcons name="calendar-clock" size={17} color="#FF9800" />
+                                    <Text style={[styles.btnText3, { color: "#FF9800" }]} numberOfLines={1}>समय बढ़ाएं</Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity 
                                     style={[styles.actionBtn3, item.isDateViolated ? styles.disabledConfirmBtn : styles.confirmBtn]} 
@@ -705,8 +777,8 @@ export default function BookingListScreen({ retailerId, retailerDetails, onBack 
                                         }); 
                                     }}
                                 >
-                                    <MaterialCommunityIcons name="check-all" size={18} color={COLORS.white} />
-                                    <Text style={[styles.btnText3, { color: COLORS.white }]}>पुष्टि करें</Text>
+                                    <MaterialCommunityIcons name="check-all" size={17} color={COLORS.white} />
+                                    <Text style={[styles.btnText3, { color: COLORS.white }]} numberOfLines={1}>पुष्टि करें</Text>
                                 </TouchableOpacity>
                             </View>
                         )}
@@ -1064,11 +1136,62 @@ const styles = StyleSheet.create({
     bookingDetails: {
         backgroundColor: '#F8FAFC',
         borderRadius: 14,
-        paddingVertical: 8,
+        paddingVertical: 10,
         paddingHorizontal: 12,
         gap: 6,
         borderWidth: 1,
         borderColor: '#E2E8F0',
+        overflow: 'hidden',
+    },
+    detailGridRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 8,
+    },
+    detailGridCol: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 7,
+        minWidth: 0,
+    },
+    detailIconCircle: {
+        width: 28,
+        height: 28,
+        borderRadius: 8,
+        justifyContent: 'center',
+        alignItems: 'center',
+        flexShrink: 0,
+    },
+    detailTextCol: {
+        flex: 1,
+        minWidth: 0,
+    },
+    detailLabel: {
+        fontSize: 10.5,
+        color: '#64748b',
+        fontWeight: '600',
+        marginBottom: 1,
+    },
+    detailValue: {
+        fontSize: 12.5,
+        fontWeight: '700',
+        color: '#1e293b',
+    },
+    detailDivider: {
+        height: 1,
+        backgroundColor: '#E2E8F0',
+        marginVertical: 2,
+    },
+    tokenRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 7,
+        marginTop: 2,
+        paddingTop: 6,
+        borderTopWidth: 1,
+        borderTopColor: '#E2E8F0',
     },
     detailRow: {
         flexDirection: 'row',
@@ -1156,8 +1279,10 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         paddingVertical: 9,
+        paddingHorizontal: 4,
         borderRadius: 10,
         gap: 3,
+        minWidth: 0,
     },
     cancelBtn: {
         backgroundColor: '#FFEBEE',

@@ -208,7 +208,7 @@ export default function BookingDetailModal({ visible, booking, onClose }: Bookin
                                                 <Text style={{ fontSize: 40 }}>❌</Text>
                                                 <Text style={{ fontSize: moderateScale(16), color: COLORS.error, fontWeight: 'bold', marginTop: 4, textAlign: 'center' }}>
                                                     {(booking.cancelled_by === 'SYSTEM_AUTO' || booking.cancellation_reason?.includes('स्वतः रद्द') || booking.cancellation_reason?.includes('किसान के न पहुँचने'))
-                                                        ? 'स्वतः रद्द हुआ'
+                                                        ? 'स्वतः रद्द हुई'
                                                         : 'रद्द किया गया'}
                                                 </Text>
                                             </View>
@@ -408,7 +408,7 @@ export default function BookingDetailModal({ visible, booking, onClose }: Bookin
                                                     isExtended ? { color: '#D97706' } :
                                                         { color: COLORS.error },
                                             ]}>
-                                                {isPending ? '⏳ लंबित' : isExtended ? '⏰ विस्तारित' : ((booking.cancelled_by === 'SYSTEM_AUTO' || booking.cancellation_reason?.includes('स्वतः रद्द') || booking.cancellation_reason?.includes('किसान के न पहुँचने')) ? '❌ स्वतः रद्द हुआ' : '❌ रद्द किया गया')}
+                                                {isPending ? '⏳ लंबित' : isExtended ? '⏰ विस्तारित' : ((booking.cancelled_by === 'SYSTEM_AUTO' || booking.cancellation_reason?.includes('स्वतः रद्द') || booking.cancellation_reason?.includes('किसान के न पहुँचने')) ? '❌ स्वतः रद्द हुई' : '❌ रद्द किया गया')}
                                             </Text>
                                         </View>
                                     );

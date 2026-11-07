@@ -100,6 +100,26 @@ function sendFirebaseNotification($fcmToken, $title, $body, $dataPayload = []) {
             "notification" => [
                 "title" => $title,
                 "body" => $body
+            ],
+            "android" => [
+                "priority" => "high",
+                "notification" => [
+                    "channel_id" => "default",
+                    "notification_priority" => "PRIORITY_MAX",
+                    "default_sound" => true,
+                    "default_vibrate_timings" => true,
+                    "visibility" => "PUBLIC"
+                ]
+            ],
+            "apns" => [
+                "headers" => [
+                    "apns-priority" => "10"
+                ],
+                "payload" => [
+                    "aps" => [
+                        "sound" => "default"
+                    ]
+                ]
             ]
         ];
 
@@ -143,6 +163,10 @@ function sendFirebaseNotification($fcmToken, $title, $body, $dataPayload = []) {
             if (preg_match('#HTTP/\d+\.\d+ (\d+)#', $http_response_header[0], $matches)) {
                 $httpCode = intval($matches[1]);
             }
+        }
+
+        if ($httpCode !== 200) {
+            error_log("Firebase FCM Notification Error [HTTP $httpCode]: " . $response);
         }
 
         return $httpCode === 200;

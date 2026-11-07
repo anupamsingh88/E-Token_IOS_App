@@ -40,14 +40,6 @@ if ($action === 'approve') {
     $new_status = 2; // 2 = Rejected
     $rejection_reason = isset($data['rejection_reason']) ? $data['rejection_reason'] : null;
 
-    // Ensure rejected_by and rejection_reason exist gracefully
-    try {
-        $conn->query("ALTER TABLE farmer_info ADD COLUMN rejected_by VARCHAR(50) NULL DEFAULT NULL");
-    } catch (Exception $e) {}
-    try {
-        $conn->query("ALTER TABLE farmer_info ADD COLUMN rejection_reason TEXT NULL DEFAULT NULL");
-    } catch (Exception $e) {}
-
     $query = "UPDATE farmer_info SET status = ?, rejected_by = ?, rejected_at = NOW(), rejection_reason = ? WHERE farmer_id = ? AND selected_retailer_id = ?";
 } else {
     echo json_encode(["status" => "error", "message" => "Invalid action"]);

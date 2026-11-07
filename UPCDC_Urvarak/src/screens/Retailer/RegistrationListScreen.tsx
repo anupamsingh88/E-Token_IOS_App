@@ -569,18 +569,25 @@ export default function RegistrationListScreen({ retailerId, retailerDetails, on
                                 <MaterialCommunityIcons name="account" size={30} color={COLORS.primary} />
                             )}
                         </TouchableOpacity>
-                        <View style={{ flex: 1 }}>
-                            <Text style={styles.farmerName}>{item.name}</Text>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                            <Text style={styles.farmerName} numberOfLines={1}>{item.name}</Text>
                             <Text style={styles.farmerDetail}>{item.phone}</Text>
                             <View style={styles.aadhaarBadge}>
                                 <Text style={styles.aadhaarText}>{item.aadhaar || 'No Aadhaar'}</Text>
                             </View>
                             {!!item.registry_id && (
-                                <Text style={[styles.farmerDetail, { marginTop: 4, fontWeight: '700', color: COLORS.primary }]}>
+                                <Text style={[styles.farmerDetail, { marginTop: 4, fontWeight: '700', color: COLORS.primary }]} numberOfLines={1}>
                                     रजिस्ट्री आईडी: {item.registry_id}
                                 </Text>
                             )}
-                            <Text style={[styles.farmerDetail, { marginTop: 2, fontWeight: '700', color: (item.kisan_panjikaran_number || item.kisan_code) ? '#15803D' : '#DC2626' }]}>
+                            <Text 
+                                style={[
+                                    styles.farmerDetail, 
+                                    { marginTop: 2, fontWeight: '700', color: (item.kisan_panjikaran_number || item.kisan_code) ? '#15803D' : '#DC2626' }
+                                ]}
+                                numberOfLines={1}
+                                ellipsizeMode="tail"
+                            >
                                 कृषक पंजिका कोड: {(item.kisan_panjikaran_number || item.kisan_code) ? (item.kisan_panjikaran_number || item.kisan_code) : 'उपलब्ध नहीं'}
                             </Text>
                         </View>

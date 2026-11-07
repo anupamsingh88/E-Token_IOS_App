@@ -241,11 +241,14 @@ function AppInner() {
         // 5. Ensure Notification Channel exists
         if (Platform.OS === 'android') {
           await Notifications.setNotificationChannelAsync('default', {
-            name: 'Default',
+            name: 'Booking & Status Updates',
             importance: Notifications.AndroidImportance.MAX,
             vibrationPattern: [0, 250, 250, 250],
             lightColor: '#FF231F7C',
-            showBadge: false,
+            sound: 'default',
+            showBadge: true,
+            enableVibrate: true,
+            enableLights: true,
           });
           await Notifications.setBadgeCountAsync(0);
         }
@@ -257,24 +260,49 @@ function AppInner() {
 
     requestAllPermissions();
 
-    // Handle foreground messages (triggers local Expo popup)
+    // 1. Handle foreground messages (triggers local Expo popup banner)
     const unsubscribe = messaging().onMessage(async remoteMessage => {
-      // No badge logic needed
-
-      Notifications.scheduleNotificationAsync({
-        content: {
-          title: remoteMessage.notification?.title || 'New Notification',
-          body: remoteMessage.notification?.body,
-          data: remoteMessage.data,
-          android: {
-            channelId: 'default',
+      try {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: remoteMessage.notification?.title || 'नई सूचना',
+            body: remoteMessage.notification?.body || '',
+            data: remoteMessage.data || {},
+            sound: 'default',
             priority: Notifications.AndroidNotificationPriority.MAX,
             vibrate: [0, 250, 250, 250],
           },
-          sound: true,
-        } as any,
-        trigger: null, // show immediately
-      });
+          trigger: {
+            channelId: 'default',
+          } as any,
+        });
+      } catch (e) {
+        console.error('Error displaying foreground notification:', e);
+      }
+    });
+
+    // 2. Handle token refresh to keep database in sync across reinstalls / rotations
+    const unsubscribeTokenRefresh = messaging().onTokenRefresh(async (newToken) => {
+      console.log('🔄 FCM Token Refreshed:', newToken);
+      try {
+        const session = await AsyncStorage.getItem('user_session');
+        if (session) {
+          const farmerData = JSON.parse(session);
+          if (farmerData?.farmer_id) {
+            await fetch(`${API_BASE_URL}/update_fcm_token.php`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                user_type: 'farmer',
+                user_id: farmerData.farmer_id,
+                fcm_token: newToken
+              })
+            });
+          }
+        }
+      } catch (e) {
+        console.error('Error syncing refreshed FCM token:', e);
+      }
     });
 
     // 3. Handle notification taps
@@ -291,6 +319,7 @@ function AppInner() {
 
     return () => {
       unsubscribe();
+      unsubscribeTokenRefresh();
       responseSubscription.remove();
       stateSubscription.remove();
     };

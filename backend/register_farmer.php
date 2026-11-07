@@ -141,24 +141,7 @@ try {
     $registryId = $input['registry_id'] ?? ($_POST['registry_id'] ?? null);
     $kisanPanjikaranNumber = trim((string)($input['kisan_panjikaran_number'] ?? ($input['kisan_code'] ?? ($_POST['kisan_panjikaran_number'] ?? ($_POST['kisan_code'] ?? '')))));
 
-    // Ensure columns exist gracefully
-    try {
-        $pdo->exec("ALTER TABLE farmer_info ADD COLUMN registry_id VARCHAR(100) NULL DEFAULT NULL");
-    } catch (Exception $colEx) {
-    }
-    try {
-        $pdo->exec("ALTER TABLE farmer_info ADD COLUMN kisan_panjikaran_number VARCHAR(100) NULL DEFAULT NULL");
-    } catch (Exception $colEx) {
-    }
-    try {
-        $pdo->exec("ALTER TABLE farmer_info ADD COLUMN kisan_panjikaran_photo TEXT NULL DEFAULT NULL");
-    } catch (Exception $colEx) {
-    }
-    try {
-        $pdo->exec("ALTER TABLE farmer_info MODIFY COLUMN kisan_panjikaran_photo TEXT NULL DEFAULT NULL");
-    } catch (Exception $colEx) {
-    }
-
+    // Columns (registry_id, kisan_panjikaran_number, kisan_panjikaran_photo) exist statically in schema
     if (!empty($registryId)) {
         // Check if any active record is using this registry_id
         $stmt = $pdo->prepare("SELECT status FROM farmer_info WHERE registry_id = ? AND status != 2");

@@ -44,20 +44,6 @@ try {
         }
     }
 
-    // Ensure retailer_stock_requests table exists
-    $conn->query("
-        CREATE TABLE IF NOT EXISTS `retailer_stock_requests` (
-            `id`                 INT AUTO_INCREMENT PRIMARY KEY,
-            `retailer_id`        VARCHAR(100) NOT NULL,
-            `product_type`       VARCHAR(50) NOT NULL,
-            `requested_quantity` INT NOT NULL,
-            `status`             ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
-            `ar_comment`         TEXT DEFAULT NULL,
-            `created_at`         DATETIME DEFAULT CURRENT_TIMESTAMP,
-            `updated_at`         DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    ");
-
     // Check for existing pending request for today
     $today = date('Y-m-d');
     $p_type = strtolower($product_type);

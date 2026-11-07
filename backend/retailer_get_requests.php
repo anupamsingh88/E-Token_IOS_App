@@ -121,26 +121,6 @@ if ($prod_res) {
     }
 }
 
-// Ensure stock columns exist in retailer_stock dynamically (ordered after the previous product)
-$stock_cols_res = $conn->query("SHOW COLUMNS FROM retailer_stock");
-$existing_stock_cols = [];
-if ($stock_cols_res) {
-    while ($sc = $stock_cols_res->fetch_assoc()) {
-        $existing_stock_cols[] = strtolower($sc['Field']);
-    }
-}
-
-$prev_col_name = 'date';
-foreach ($dynamic_products as $pr) {
-    $col_name = strtoupper($pr['type_id']) . '_stock';
-    if (!in_array(strtolower($col_name), $existing_stock_cols)) {
-        $after_clause = in_array(strtolower($prev_col_name), $existing_stock_cols) ? "AFTER `$prev_col_name`" : "";
-        @$conn->query("ALTER TABLE retailer_stock ADD COLUMN `$col_name` INT DEFAULT 0 $after_clause");
-        $existing_stock_cols[] = strtolower($col_name);
-    }
-    $prev_col_name = $col_name;
-}
-
 // Fetch Current Stock (Using Internal ID)
 // Fallback to most recent record if today's is missing
 $stock_query = "SELECT * FROM retailer_stock 
@@ -176,28 +156,115 @@ foreach ($dynamic_products as $pr) {
     ];
 }
 
+$total_current_stock = 0;
+$enhanced_stock_items = [];
+foreach ($stock_items as $item) {
+    $stock_qty = (int)$item['stock'];
+    $total_current_stock += $stock_qty;
+    $status_str = ($stock_qty <= 0) ? 'OUT_OF_STOCK' : (($stock_qty <= 20) ? 'LOW_STOCK' : 'AVAILABLE');
+    $item['status'] = $status_str;
+    $item['is_out_of_stock'] = ($stock_qty <= 0);
+    $enhanced_stock_items[] = $item;
+}
+
+$total_storage_capacity = (int)($retailer_info['total_bori_capacity'] ?? 0);
+$utilization_percent = ($total_storage_capacity > 0) ? min(100, round(($total_current_stock / $total_storage_capacity) * 100)) : 0;
+
+$stock_summary = [
+    "total_storage_capacity" => $total_storage_capacity,
+    "current_total_stock" => $total_current_stock,
+    "utilization_percent" => $utilization_percent,
+    "has_out_of_stock" => in_array('OUT_OF_STOCK', array_column($enhanced_stock_items, 'status'))
+];
+
 $response['data']['current_stock'] = $current_stock_map;
-$response['data']['stock_items'] = $stock_items;
+$response['data']['stock_items'] = $enhanced_stock_items;
+$response['data']['stock_summary'] = $stock_summary;
+
+// Calculate Dynamic Rolling Footfall Capacity for Today
+$base_visitor_capacity = (int)($retailer_info['daily_visitor_capacity'] ?? 50);
+if ($base_visitor_capacity <= 0) $base_visitor_capacity = 50;
+
+$effective_capacity = $base_visitor_capacity;
+$is_schedule_active = 1;
+$is_holiday = 0;
+$closure_reason = null;
+
+// Fetch date-specific schedule from retailer_daily_schedule
+$sched_stmt = $conn->prepare("SELECT is_active, is_holiday, custom_capacity, closure_reason FROM retailer_daily_schedule WHERE retailer_id = ? AND schedule_date = ? LIMIT 1");
+if ($sched_stmt) {
+    $sched_stmt->bind_param("ss", $retailer_id_str, $today);
+    $sched_stmt->execute();
+    $s_res = $sched_stmt->get_result()->fetch_assoc();
+    if ($s_res) {
+        $is_schedule_active = (int)$s_res['is_active'];
+        $is_holiday = (int)$s_res['is_holiday'];
+        if ($s_res['custom_capacity'] !== null && (int)$s_res['custom_capacity'] > 0) {
+            $effective_capacity = (int)$s_res['custom_capacity'];
+        }
+        $closure_reason = $s_res['closure_reason'];
+    }
+    $sched_stmt->close();
+}
+
+// Active Waiting Farmers (Distinct farmers booked for today who haven't collected yet)
+$active_queue_count = 0;
+$active_stmt = $conn->prepare("
+    SELECT COUNT(DISTINCT farmer_id) as active_count
+    FROM product_bookings
+    WHERE retailer_id = ?
+      AND booking_date = ?
+      AND status IN ('Pending', 'Approved', 'Confirmed', 'Extended', 'Booked')
+");
+if ($active_stmt) {
+    $active_stmt->bind_param("ss", $retailer_id_str, $today);
+    $active_stmt->execute();
+    $a_row = $active_stmt->get_result()->fetch_assoc();
+    $active_queue_count = (int)($a_row['active_count'] ?? 0);
+    $active_stmt->close();
+}
+
+// Collected Farmers Today (Distinct farmers who already collected their bags)
+$collected_today_count = 0;
+$col_stmt = $conn->prepare("
+    SELECT COUNT(DISTINCT farmer_id) as collected_count
+    FROM product_bookings
+    WHERE retailer_id = ?
+      AND booking_date = ?
+      AND status = 'Collected'
+");
+if ($col_stmt) {
+    $col_stmt->bind_param("ss", $retailer_id_str, $today);
+    $col_stmt->execute();
+    $c_row = $col_stmt->get_result()->fetch_assoc();
+    $collected_today_count = (int)($c_row['collected_count'] ?? 0);
+    $col_stmt->close();
+}
+
+$remaining_slots = max(0, $effective_capacity - $active_queue_count);
+$is_capacity_full = ($active_queue_count >= $effective_capacity) ? 1 : 0;
+$effective_active = ($is_schedule_active === 1 && $is_holiday === 0 && $is_capacity_full === 0) ? 1 : 0;
+
+$response['data']['capacity_status'] = [
+    "base_capacity" => $base_visitor_capacity,
+    "effective_capacity" => $effective_capacity,
+    "active_queue" => $active_queue_count,
+    "collected_today" => $collected_today_count,
+    "remaining_slots" => $remaining_slots,
+    "is_active" => $is_schedule_active,
+    "is_holiday" => $is_holiday,
+    "is_full" => $is_capacity_full,
+    "effective_active" => $effective_active,
+    "closure_reason" => $closure_reason,
+    "schedule_date" => $today
+];
 
 // Auto-cancel expired bookings for THIS retailer and revert stock
 autoCancelExpiredBookings($conn, $retailer_id_str, null);
 
-// Helper to check if column exists
-function columnExists($conn, $table, $column)
-{
-    $res = $conn->query("SHOW COLUMNS FROM $table LIKE '$column'");
-    return ($res && $res->num_rows > 0);
-}
-
 // Fetch Registration Requests (Farmers who selected this retailer)
-$reg_cols = "farmer_info.farmer_id as id, farmer_info.name as full_name, farmer_info.mobile as mobile_number, farmer_info.aadhaar, farmer_info.village_id as village, farmer_info.status, farmer_info.created_at, farmer_info.khatauni_number as khasra_number, farmer_info.khasra_rukba, farmer_info.aadhaar_photo, farmer_info.khatauni_photo, farmer_info.profile_photo, farmer_info.approved_at, farmer_info.approved_by, farmer_info.registry_id, farmer_info.kisan_panjikaran_number,
+$reg_cols = "farmer_info.farmer_id as id, farmer_info.name as full_name, farmer_info.mobile as mobile_number, farmer_info.aadhaar, farmer_info.village_id as village, farmer_info.status, farmer_info.created_at, farmer_info.khatauni_number as khasra_number, farmer_info.khasra_rukba, farmer_info.aadhaar_photo, farmer_info.khatauni_photo, farmer_info.profile_photo, farmer_info.approved_at, farmer_info.approved_by, farmer_info.registry_id, farmer_info.kisan_panjikaran_number, farmer_info.rejection_reason, farmer_info.kisan_panjikaran_photo,
               (SELECT COUNT(*) FROM product_bookings WHERE farmer_id = farmer_info.farmer_id AND status != 'Cancelled') as booking_count";
-if (columnExists($conn, 'farmer_info', 'rejection_reason')) {
-    $reg_cols .= ", farmer_info.rejection_reason";
-}
-if (columnExists($conn, 'farmer_info', 'kisan_panjikaran_photo')) {
-    $reg_cols .= ", farmer_info.kisan_panjikaran_photo";
-}
 $reg_query = "SELECT $reg_cols FROM farmer_info WHERE selected_retailer_id = ? ORDER BY id DESC";
 $stmt = $conn->prepare($reg_query);
 if ($stmt) {
@@ -245,55 +312,14 @@ if ($stmt) {
     $stmt->close();
 }
 
-// Fetch Booking Requests - BUILD QUERY SAFELY
-$columns = "b.id, f.name as full_name, f.mobile as phone, b.product as product_name, b.quantity, b.booking_date, b.status, b.order_id, b.price_per_bag, b.token_number";
-
-// Check optional columns
-if (columnExists($conn, 'product_bookings', 'original_quantity'))
-    $columns .= ", b.original_quantity";
-if (columnExists($conn, 'product_bookings', 'collected_at'))
-    $columns .= ", b.collected_at";
-if (columnExists($conn, 'product_bookings', 'cancelled_at'))
-    $columns .= ", b.cancelled_at";
-if (columnExists($conn, 'product_bookings', 'cancellation_reason'))
-    $columns .= ", b.cancellation_reason";
-if (columnExists($conn, 'product_bookings', 'cancelled_by'))
-    $columns .= ", b.cancelled_by";
-if (columnExists($conn, 'product_bookings', 'extended_at'))
-    $columns .= ", b.extended_at";
-if (columnExists($conn, 'product_bookings', 'extension_reason'))
-    $columns .= ", b.extension_reason";
-if (columnExists($conn, 'product_bookings', 'approved_date'))
-    $columns .= ", b.approved_date";
-if (columnExists($conn, 'product_bookings', 'created_at'))
-    $columns .= ", b.created_at";
-
-// Check farmer columns
-if (columnExists($conn, 'farmer_info', 'khatauni_number'))
-    $columns .= ", f.khatauni_number as khasra_number";
-else if (columnExists($conn, 'farmer_info', 'khasra_number'))
-    $columns .= ", f.khasra_number";
-
-if (columnExists($conn, 'farmer_info', 'khasra_rukba'))
-    $columns .= ", f.khasra_rukba";
-
-if (columnExists($conn, 'farmer_info', 'profile_photo'))
-    $columns .= ", f.profile_photo as photo";
-else if (columnExists($conn, 'farmer_info', 'photo'))
-    $columns .= ", f.photo";
-
-if (columnExists($conn, 'farmer_info', 'registry_id'))
-    $columns .= ", f.registry_id";
-
-if (columnExists($conn, 'farmer_info', 'kisan_panjikaran_number'))
-    $columns .= ", f.kisan_panjikaran_number";
-
-if (columnExists($conn, 'farmer_info', 'kisan_panjikaran_photo'))
-    $columns .= ", f.kisan_panjikaran_photo";
+// Fetch Booking Requests - STATIC SCHEMA CONTRACT
+$columns = "b.id, f.name as full_name, f.mobile as phone, b.product as product_name, b.quantity, b.booking_date, b.status, b.order_id, b.price_per_bag, b.token_number,
+            b.original_quantity, b.collected_at, b.cancelled_at, b.cancellation_reason, b.cancelled_by, b.extended_at, b.extension_reason, b.approved_date, b.created_at,
+            f.khatauni_number as khasra_number, f.khasra_rukba, f.profile_photo as photo, f.registry_id, f.kisan_panjikaran_number, f.kisan_panjikaran_photo";
 
 $book_query = "SELECT $columns
                FROM product_bookings b 
-               LEFT JOIN farmer_info f ON (b.farmer_id = f.farmer_id OR b.farmer_id = f.id) 
+               LEFT JOIN farmer_info f ON b.farmer_id = f.farmer_id 
                WHERE b.retailer_id = ?
                ORDER BY b.booking_date DESC, b.order_id";
 
@@ -366,9 +392,7 @@ if ($stmt) {
 $response['data']['changes'] = ["pending" => [], "approved" => [], "rejected" => []];
 
 // Fetch Retailer Change Requests
-$check_table = $conn->query("SHOW TABLES LIKE 'retailer_change_requests'");
-if ($check_table && $check_table->num_rows > 0) {
-    $change_query = "SELECT r.id, f.name as full_name, f.mobile as mobile_number, r.reason, r.created_at, r.status, ri.name as old_retailer_name, f.khatauni_number as khasra_number, f.khasra_rukba
+$change_query = "SELECT r.id, f.name as full_name, f.mobile as mobile_number, r.reason, r.created_at, r.status, ri.name as old_retailer_name, f.khatauni_number as khasra_number, f.khasra_rukba
                      FROM retailer_change_requests r
                      JOIN farmer_info f ON r.farmer_id = f.farmer_id
                      LEFT JOIN retailer_info ri ON r.current_retailer_id = ri.retailer_id
@@ -401,7 +425,6 @@ if ($check_table && $check_table->num_rows > 0) {
         }
         $stmt->close();
     }
-}
 
 echo json_encode($response);
 $conn->close();

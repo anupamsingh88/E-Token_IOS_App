@@ -32,19 +32,6 @@ $testNumber = "7275095741";
 $isTestNumber = ($mobile === $testNumber);
 
 try {
-    // Ensure table exists gracefully
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS `registration_otps` (
-            `id` int(11) NOT NULL AUTO_INCREMENT,
-            `mobile` varchar(15) NOT NULL,
-            `otp_code` varchar(10) NOT NULL,
-            `otp_expiry` datetime NOT NULL,
-            `created_at` timestamp DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (`id`),
-            KEY `idx_reg_otp_mobile` (`mobile`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-    ");
-
     // 1. Rate Limiting: Cooldown check (Minimum 60 seconds between OTP requests for the same number)
     $stmtCooldown = $pdo->prepare("SELECT created_at FROM registration_otps WHERE mobile = ? ORDER BY id DESC LIMIT 1");
     $stmtCooldown->execute([$mobile]);

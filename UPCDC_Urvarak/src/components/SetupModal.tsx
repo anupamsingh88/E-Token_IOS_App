@@ -1,5 +1,5 @@
 import { apiFetch } from '../utils/apiClient';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -10,11 +10,10 @@ import {
     ScrollView,
     KeyboardAvoidingView,
     Platform,
-    Alert,
     ActivityIndicator,
     useWindowDimensions
 } from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, SHADOWS } from '../constants';
 import { API_ENDPOINTS } from '../config/config';
 import AlertModal from './AlertModal';
@@ -24,6 +23,20 @@ interface SetupModalProps {
     retailerId: string;
     onComplete: () => void;
 }
+
+interface ProductItem {
+    type: string;
+    name: string;
+    nameHindi: string;
+}
+
+const DEFAULT_PRODUCTS: ProductItem[] = [
+    { type: 'urea', name: 'Urea', nameHindi: 'यूरिया' },
+    { type: 'dap', name: 'DAP', nameHindi: 'डीएपी' },
+    { type: 'npk', name: 'NPK', nameHindi: 'एनपीके' },
+    { type: 'mop', name: 'MOP', nameHindi: 'एमओपी' },
+    { type: 'tsp', name: 'TSP', nameHindi: 'टीएसपी' }
+];
 
 export default function SetupModal({ visible, retailerId, onComplete }: SetupModalProps) {
     const [step, setStep] = useState(1);
@@ -49,18 +62,49 @@ export default function SetupModal({ visible, retailerId, onComplete }: SetupMod
     // Check if it's a small screen to adjust UI
     const isSmallScreen = windowHeight < 800;
 
-    // Form State
+    // Form State (Step 1 & Step 2)
     const [totalCapacity, setTotalCapacity] = useState('');
     const [visitorCap, setVisitorCap] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [securePassword, setSecurePassword] = useState(true);
 
-    // Initial Stock State
-    const [ureaStock, setUreaStock] = useState('');
-    const [dapStock, setDapStock] = useState('');
-    const [npkStock, setNpkStock] = useState('');
-    const [mopStock, setMopStock] = useState('');
+    // Dynamic Products & Stocks State (Step 3)
+    const [products, setProducts] = useState<ProductItem[]>(DEFAULT_PRODUCTS);
+    const [stocks, setStocks] = useState<Record<string, string>>({});
+    const [fetchingProducts, setFetchingProducts] = useState(false);
+
+    // Fetch dynamic products from backend when modal becomes visible
+    useEffect(() => {
+        if (!visible) return;
+        let isMounted = true;
+
+        const loadProducts = async () => {
+            setFetchingProducts(true);
+            try {
+                const res = await apiFetch(API_ENDPOINTS.getFertilizerPrices);
+                const data = await res.json();
+                if (isMounted && data.success && Array.isArray(data.prices) && data.prices.length > 0) {
+                    const mapped: ProductItem[] = data.prices.map((p: any) => ({
+                        type: String(p.type || p.id).toLowerCase(),
+                        name: p.name,
+                        nameHindi: p.nameHindi || p.name
+                    }));
+                    setProducts(mapped);
+                }
+            } catch (e) {
+                console.error('Error fetching dynamic products in SetupModal:', e);
+            } finally {
+                if (isMounted) setFetchingProducts(false);
+            }
+        };
+
+        loadProducts();
+
+        return () => {
+            isMounted = false;
+        };
+    }, [visible]);
 
     const handleSubmit = async () => {
         if (!password || password !== confirmPassword) {
@@ -73,10 +117,10 @@ export default function SetupModal({ visible, retailerId, onComplete }: SetupMod
             return;
         }
 
-        if (!ureaStock || !dapStock || !npkStock || !mopStock) {
-            showAlert('error', 'त्रुटि', 'कृपया सभी उर्वरक स्टॉक विवरण भरें');
-            return;
-        }
+        const updates = products.map(prod => ({
+            product_type: prod.type,
+            quantity: parseInt(stocks[prod.type] || '0', 10) || 0
+        }));
 
         setLoading(true);
         try {
@@ -88,10 +132,14 @@ export default function SetupModal({ visible, retailerId, onComplete }: SetupMod
                     password: password,
                     total_capacity: parseInt(totalCapacity) || 0,
                     daily_visitor_capacity: parseInt(visitorCap) || 0,
-                    urea_stock: parseInt(ureaStock) || 0,
-                    dap_stock: parseInt(dapStock) || 0,
-                    npk_stock: parseInt(npkStock) || 0,
-                    mop_stock: parseInt(mopStock) || 0
+                    // Legacy backwards-compatibility
+                    urea_stock: parseInt(stocks['urea'] || '0', 10) || 0,
+                    dap_stock: parseInt(stocks['dap'] || '0', 10) || 0,
+                    npk_stock: parseInt(stocks['npk'] || '0', 10) || 0,
+                    mop_stock: parseInt(stocks['mop'] || '0', 10) || 0,
+                    // Dynamic products
+                    updates: updates,
+                    stocks: stocks
                 })
             });
 
@@ -119,7 +167,7 @@ export default function SetupModal({ visible, retailerId, onComplete }: SetupMod
                 <TextInput
                     style={styles.fullInput}
                     placeholder="Total Capacity (e.g. 500)"
-                    placeholderTextColor="#94A3B8"
+                    placeholderTextColor="#64748B"
                     keyboardType="numeric"
                     value={totalCapacity}
                     onChangeText={setTotalCapacity}
@@ -131,7 +179,7 @@ export default function SetupModal({ visible, retailerId, onComplete }: SetupMod
                 <TextInput
                     style={styles.fullInput}
                     placeholder="Visitor Capacity (e.g. 50)"
-                    placeholderTextColor="#94A3B8"
+                    placeholderTextColor="#64748B"
                     keyboardType="numeric"
                     value={visitorCap}
                     onChangeText={setVisitorCap}
@@ -149,9 +197,9 @@ export default function SetupModal({ visible, retailerId, onComplete }: SetupMod
                 <Text style={styles.label}>नया पासवर्ड सेट करें</Text>
                 <View style={styles.passwordWrapper}>
                     <TextInput
-                        style={[styles.fullInput, { flex: 1 }]}
+                        style={[styles.fullInput, { flex: 1, borderWidth: 0, backgroundColor: 'transparent' }]}
                         placeholder="New Password"
-                        placeholderTextColor="#94A3B8"
+                        placeholderTextColor="#64748B"
                         secureTextEntry={securePassword}
                         value={password}
                         onChangeText={setPassword}
@@ -162,8 +210,8 @@ export default function SetupModal({ visible, retailerId, onComplete }: SetupMod
                     >
                         <Ionicons
                             name={securePassword ? "eye-off" : "eye"}
-                            size={24}
-                            color={COLORS.primary}
+                            size={22}
+                            color="#475569"
                         />
                     </TouchableOpacity>
                 </View>
@@ -174,7 +222,7 @@ export default function SetupModal({ visible, retailerId, onComplete }: SetupMod
                 <TextInput
                     style={styles.fullInput}
                     placeholder="Confirm Password"
-                    placeholderTextColor="#94A3B8"
+                    placeholderTextColor="#64748B"
                     secureTextEntry={securePassword}
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
@@ -188,52 +236,30 @@ export default function SetupModal({ visible, retailerId, onComplete }: SetupMod
             <Text style={styles.stepTitle}>प्रारंभिक स्टॉक (Initial Stock)</Text>
             <Text style={styles.stepSubtitle}>आज का उपलब्ध स्टॉक दर्ज करें (बोरी में)</Text>
 
-            <View style={styles.grid}>
-                <View style={styles.itemRow}>
-                    <Text style={styles.itemLabel}>यूरिया (Urea)</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="0"
-                        placeholderTextColor="#94A3B8"
-                        keyboardType="numeric"
-                        value={ureaStock}
-                        onChangeText={setUreaStock}
-                    />
+            {fetchingProducts && products.length === 0 ? (
+                <View style={{ padding: 24, alignItems: 'center' }}>
+                    <ActivityIndicator size="small" color={COLORS.primary} />
+                    <Text style={{ marginTop: 10, color: '#64748B', fontSize: 14, fontWeight: '600' }}>
+                        उर्वरक उत्पाद लोड हो रहे हैं...
+                    </Text>
                 </View>
-                <View style={styles.itemRow}>
-                    <Text style={styles.itemLabel}>डीएपी (DAP)</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="0"
-                        placeholderTextColor="#94A3B8"
-                        keyboardType="numeric"
-                        value={dapStock}
-                        onChangeText={setDapStock}
-                    />
+            ) : (
+                <View style={styles.grid}>
+                    {products.map((prod) => (
+                        <View key={prod.type} style={styles.itemRow}>
+                            <Text style={styles.itemLabel}>{prod.nameHindi} ({prod.name})</Text>
+                            <TextInput
+                                style={styles.input}
+                                placeholder="0 बोरी"
+                                placeholderTextColor="#64748B"
+                                keyboardType="numeric"
+                                value={stocks[prod.type] || ''}
+                                onChangeText={(val) => setStocks(prev => ({ ...prev, [prod.type]: val }))}
+                            />
+                        </View>
+                    ))}
                 </View>
-                <View style={styles.itemRow}>
-                    <Text style={styles.itemLabel}>एनपीके (NPK)</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="0"
-                        placeholderTextColor="#94A3B8"
-                        keyboardType="numeric"
-                        value={npkStock}
-                        onChangeText={setNpkStock}
-                    />
-                </View>
-                <View style={styles.itemRow}>
-                    <Text style={styles.itemLabel}>एमओपी (MOP)</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="0"
-                        placeholderTextColor="#94A3B8"
-                        keyboardType="numeric"
-                        value={mopStock}
-                        onChangeText={setMopStock}
-                    />
-                </View>
-            </View>
+            )}
         </View>
     );
 
@@ -259,7 +285,9 @@ export default function SetupModal({ visible, retailerId, onComplete }: SetupMod
                             <View style={[styles.line, step >= 3 && styles.activeLine]} />
                             <View style={[styles.dot, step >= 3 && styles.activeDot]} />
                         </View>
-                        <Text style={[styles.headerTitle, isSmallScreen && { fontSize: 20, marginTop: 5 }]}>प्रथम लॉगिन सेटअप</Text>
+                        <Text style={[styles.headerTitle, isSmallScreen && { fontSize: 20, marginTop: 5 }]}>
+                            प्रथम लॉगिन सेटअप
+                        </Text>
                     </View>
 
                     <ScrollView
@@ -270,7 +298,6 @@ export default function SetupModal({ visible, retailerId, onComplete }: SetupMod
                     >
                         {step === 1 ? renderStep1() : step === 2 ? renderStep2() : renderStep3()}
                         
-                        {/* For very small screens, we might want to add extra padding at bottom of scroll */}
                         {isSmallScreen && <View style={{ height: 20 }} />}
                     </ScrollView>
 
@@ -299,8 +326,13 @@ export default function SetupModal({ visible, retailerId, onComplete }: SetupMod
                             </TouchableOpacity>
                         ) : step === 2 ? (
                             <View style={styles.actionRow}>
-                                <TouchableOpacity style={[styles.backBtn, isSmallScreen && { padding: 14 }]} onPress={() => setStep(1)}>
-                                    <Text style={[styles.btnText, { color: COLORS.primary }, isSmallScreen && { fontSize: 16 }]}>पीछे</Text>
+                                <TouchableOpacity 
+                                    style={[styles.backBtn, isSmallScreen && { padding: 14 }]} 
+                                    onPress={() => setStep(1)}
+                                >
+                                    <Text style={[styles.btnText, { color: COLORS.primary }, isSmallScreen && { fontSize: 16 }]}>
+                                        पीछे
+                                    </Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity
                                     style={[
@@ -327,17 +359,22 @@ export default function SetupModal({ visible, retailerId, onComplete }: SetupMod
                             </View>
                         ) : (
                             <View style={styles.actionRow}>
-                                <TouchableOpacity style={[styles.backBtn, isSmallScreen && { padding: 14 }]} onPress={() => setStep(2)}>
-                                    <Text style={[styles.btnText, { color: COLORS.primary }, isSmallScreen && { fontSize: 16 }]}>पीछे</Text>
+                                <TouchableOpacity 
+                                    style={[styles.backBtn, isSmallScreen && { padding: 14 }]} 
+                                    onPress={() => setStep(2)}
+                                >
+                                    <Text style={[styles.btnText, { color: COLORS.primary }, isSmallScreen && { fontSize: 16 }]}>
+                                        पीछे
+                                    </Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity
                                     style={[
                                         styles.submitBtn, 
-                                        (!ureaStock || !dapStock || !npkStock || !mopStock) && styles.disabledBtn,
+                                        loading && styles.disabledBtn,
                                         isSmallScreen && { padding: 14 }
                                     ]}
                                     onPress={handleSubmit}
-                                    disabled={loading || !ureaStock || !dapStock || !npkStock || !mopStock}
+                                    disabled={loading}
                                 >
                                     {loading ? <ActivityIndicator color="#FFF" /> : (
                                         <>
@@ -351,7 +388,8 @@ export default function SetupModal({ visible, retailerId, onComplete }: SetupMod
                     </View>
                 </View>
             </KeyboardAvoidingView>
-        <AlertModal
+
+            <AlertModal
                 visible={alertModal.visible}
                 type={alertModal.type}
                 title={alertModal.title}
@@ -365,11 +403,11 @@ export default function SetupModal({ visible, retailerId, onComplete }: SetupMod
 const styles = StyleSheet.create({
     modalOverlay: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
+        backgroundColor: 'rgba(0,0,0,0.6)',
         justifyContent: 'flex-end',
     },
     modalContent: {
-        backgroundColor: COLORS.white,
+        backgroundColor: '#FFFFFF',
         borderTopLeftRadius: 30,
         borderTopRightRadius: 30,
         borderBottomLeftRadius: 0,
@@ -377,7 +415,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: SPACING.xl,
         paddingTop: SPACING.xl,
         paddingBottom: Platform.OS === 'ios' ? 34 : SPACING.xl,
-        maxHeight: '85%',
+        maxHeight: '88%',
         width: '100%',
         ...SHADOWS.large,
     },
@@ -399,7 +437,7 @@ const styles = StyleSheet.create({
         width: 12,
         height: 12,
         borderRadius: 6,
-        backgroundColor: '#DDD',
+        backgroundColor: '#E2E8F0',
     },
     activeDot: {
         backgroundColor: COLORS.primary,
@@ -407,7 +445,7 @@ const styles = StyleSheet.create({
     line: {
         width: 40,
         height: 3,
-        backgroundColor: '#DDD',
+        backgroundColor: '#E2E8F0',
     },
     activeLine: {
         backgroundColor: COLORS.primary,
@@ -418,60 +456,62 @@ const styles = StyleSheet.create({
     stepTitle: {
         fontSize: 18,
         fontWeight: '800',
-        color: COLORS.textPrimary,
-        marginBottom: 8,
+        color: '#1E293B',
+        marginBottom: 6,
     },
     stepSubtitle: {
         fontSize: 14,
-        color: COLORS.textSecondary,
+        color: '#64748B',
         marginBottom: 20,
+        fontWeight: '500',
     },
     grid: {
         gap: 12,
         marginBottom: 20,
     },
     itemRow: {
-        backgroundColor: '#F9FAFB',
-        padding: 12,
-        borderRadius: 15,
+        backgroundColor: '#F8FAFC',
+        padding: 14,
+        borderRadius: 14,
+        borderWidth: 1.5,
+        borderColor: '#E2E8F0',
     },
     itemLabel: {
-        fontSize: 16,
-        fontWeight: '900',
-        color: COLORS.primary,
+        fontSize: 15,
+        fontWeight: '800',
+        color: '#1E293B',
         marginBottom: 8,
     },
-    inputGroup: {
-        flexDirection: 'row',
-        gap: 10,
-    },
     input: {
-        flex: 1,
-        backgroundColor: COLORS.white,
+        backgroundColor: '#FFFFFF',
         borderRadius: 10,
-        padding: 10,
-        borderWidth: 1,
-        borderColor: '#EEE',
-        fontSize: 14,
-        fontWeight: '600',
-    },
-    fullInput: {
-        backgroundColor: '#F9FAFB',
-        borderRadius: 12,
-        padding: 15,
-        borderWidth: 1,
-        borderColor: '#EEE',
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        borderWidth: 1.5,
+        borderColor: '#CBD5E1',
         fontSize: 16,
         fontWeight: '600',
+        color: '#0F172A', // Jet Black/Navy text - 100% visible
+    },
+    fullInput: {
+        backgroundColor: '#FFFFFF',
+        borderRadius: 12,
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+        borderWidth: 1.5,
+        borderColor: '#CBD5E1',
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#0F172A', // Jet Black/Navy text - 100% visible
     },
     label: {
         fontSize: 15,
         fontWeight: '700',
-        color: COLORS.textPrimary,
+        color: '#1E293B',
         marginBottom: 8,
     },
     field: {
-        marginBottom: 15,
+        marginBottom: 16,
     },
     nextBtn: {
         backgroundColor: COLORS.primary,
@@ -479,7 +519,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         padding: 16,
-        borderRadius: 15,
+        borderRadius: 14,
         gap: 10,
         marginTop: 10,
     },
@@ -490,35 +530,40 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         padding: 16,
-        borderRadius: 15,
+        borderRadius: 14,
         gap: 10,
-        },
+    },
     backBtn: {
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
         padding: 16,
+        borderRadius: 14,
+        borderWidth: 1.5,
+        borderColor: COLORS.primary,
+        backgroundColor: '#F5F3FF',
     },
     actionRow: {
         flexDirection: 'row',
-        gap: 10,
+        gap: 12,
         marginTop: 10,
     },
     btnText: {
-        color: COLORS.white,
-        fontSize: 18,
-        fontWeight: '900',
+        color: '#FFFFFF',
+        fontSize: 17,
+        fontWeight: '800',
     },
     passwordWrapper: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#F9FAFB',
+        backgroundColor: '#FFFFFF',
         borderRadius: 12,
-        borderWidth: 1,
-        borderColor: '#EEE',
+        borderWidth: 1.5,
+        borderColor: '#CBD5E1',
     },
     eyeBtn: {
-        padding: 15,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
     },
     scrollArea: {
         width: '100%',
@@ -531,11 +576,11 @@ const styles = StyleSheet.create({
         width: '100%',
         paddingTop: SPACING.lg,
         borderTopWidth: 1,
-        borderTopColor: '#F3F4F6',
+        borderTopColor: '#F1F5F9',
         marginTop: SPACING.md,
     },
     disabledBtn: {
-        backgroundColor: '#CCC',
-        opacity: 0.7,
+        backgroundColor: '#94A3B8',
+        opacity: 0.6,
     }
 });

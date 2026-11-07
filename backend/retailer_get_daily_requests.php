@@ -28,10 +28,8 @@ try {
         throw new Exception("retailer_id is required");
     }
 
-    // Check if table exists
-    $table_check = $conn->query("SHOW TABLES LIKE 'retailer_stock_requests'");
     $requests = [];
-    if ($table_check && $table_check->num_rows > 0) {
+    if (true) {
         $query = "SELECT product_type, requested_quantity, status, ar_comment, created_at 
                   FROM retailer_stock_requests 
                   WHERE retailer_id = ? AND DATE(created_at) = ?

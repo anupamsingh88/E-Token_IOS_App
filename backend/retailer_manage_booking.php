@@ -251,14 +251,6 @@ if ($action === 'confirm') {
         ? trim($data['cancellation_reason'])
         : (isset($data['reason']) && trim($data['reason']) !== '' ? trim($data['reason']) : 'दुकानदार द्वारा रद्द किया गया');
 
-    // Ensure columns exist gracefully
-    try {
-        $conn->query("ALTER TABLE product_bookings ADD COLUMN cancellation_reason TEXT NULL DEFAULT NULL AFTER cancelled_at");
-    } catch (Exception $e) {}
-    try {
-        $conn->query("ALTER TABLE product_bookings ADD COLUMN cancelled_by VARCHAR(50) NULL DEFAULT NULL AFTER cancellation_reason");
-    } catch (Exception $e) {}
-
     $set_clause .= ", cancelled_at = NOW(), cancellation_reason = ?, cancelled_by = ?";
     $params[] = $cancellation_reason;
     $params[] = $retailer_id_str;

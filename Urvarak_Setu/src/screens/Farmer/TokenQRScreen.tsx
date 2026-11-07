@@ -253,7 +253,7 @@ export default function TokenQRScreen({
                                 isPending && { color: COLORS.warning },
                                 isCancelled && { color: COLORS.error }
                             ] as any}>
-                                {isPending ? 'लंबित (Pending)' : (((booking as any).cancelled_by === 'SYSTEM_AUTO' || (booking as any).cancellation_reason?.includes('स्वतः रद्द') || (booking as any).cancellation_reason?.includes('किसान के न पहुँचने')) ? 'स्वतः रद्द हुआ' : 'रद्द किया गया (Cancelled)')}
+                                {isPending ? 'लंबित (Pending)' : (((booking as any).cancelled_by === 'SYSTEM_AUTO' || (booking as any).cancellation_reason?.includes('स्वतः रद्द') || (booking as any).cancellation_reason?.includes('किसान के न पहुँचने')) ? 'स्वतः रद्द हुई' : 'रद्द किया गया (Cancelled)')}
                             </Text>
                             <Text style={{ color: COLORS.textSecondary, fontSize: FONT_SIZES.sm, textAlign: 'center', marginTop: 4 }}>
                                 {isPending

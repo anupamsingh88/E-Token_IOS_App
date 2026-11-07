@@ -38,17 +38,6 @@ if (!$farmer_id) {
 }
 
 try {
-    // Ensure columns exist gracefully
-    try {
-        $pdo->exec("ALTER TABLE farmer_info ADD COLUMN registry_id VARCHAR(100) NULL DEFAULT NULL");
-    } catch (Exception $e) {}
-    try {
-        $pdo->exec("ALTER TABLE farmer_info ADD COLUMN kisan_panjikaran_number VARCHAR(100) NULL DEFAULT NULL");
-    } catch (Exception $e) {}
-    try {
-        $pdo->exec("ALTER TABLE farmer_info ADD COLUMN kisan_panjikaran_photo TEXT NULL DEFAULT NULL");
-    } catch (Exception $e) {}
-
     $updates = [];
     $params = [];
     $kisan_panjikaran_photo_path = null;

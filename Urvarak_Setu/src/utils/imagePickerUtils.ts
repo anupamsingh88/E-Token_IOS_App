@@ -1,7 +1,18 @@
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as DocumentPicker from 'expo-document-picker';
-import { Alert, Linking } from 'react-native';
+import { Alert, Linking, Platform } from 'react-native';
+
+/**
+ * On iOS, launching the native camera or photo picker while a React Native <Modal>
+ * is dismissing causes an appearance transition conflict that immediately dismisses
+ * the camera/picker. This helper gives the modal dismiss animation time to complete.
+ */
+export const waitForModalDismiss = async (delayMs: number = 400): Promise<void> => {
+    if (Platform.OS === 'ios') {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+};
 
 /**
  * Ensures camera permission is active.
@@ -73,6 +84,7 @@ export const pickDocument = async (
     onError?: (message: string) => void
 ) => {
     try {
+        await waitForModalDismiss();
         const result = await DocumentPicker.getDocumentAsync({
             type: 'application/pdf',
             copyToCacheDirectory: true,
@@ -99,6 +111,7 @@ export const pickMultipleDocuments = async (
     onError?: (message: string) => void
 ) => {
     try {
+        await waitForModalDismiss();
         const result = await DocumentPicker.getDocumentAsync({
             type: 'application/pdf',
             copyToCacheDirectory: true,
@@ -134,12 +147,14 @@ export const pickFarmerPhoto = async (
             if (!hasPermission) {
                 return;
             }
+            await waitForModalDismiss();
             result = await ImagePicker.launchCameraAsync({
                 mediaTypes: ImagePicker.MediaTypeOptions.Images,
                 allowsEditing: false, 
                 quality: 1,
             });
         } else {
+            await waitForModalDismiss();
             result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ImagePicker.MediaTypeOptions.Images,
                 allowsEditing: false, 
@@ -177,6 +192,7 @@ export const pickMultipleKhatauniPhotos = async (
             if (!hasPermission) {
                 return;
             }
+            await waitForModalDismiss();
             result = await ImagePicker.launchCameraAsync({
                 mediaTypes: ImagePicker.MediaTypeOptions.Images,
                 allowsEditing: false, 
@@ -186,6 +202,7 @@ export const pickMultipleKhatauniPhotos = async (
                 onSuccess([result.assets[0].uri]);
             }
         } else {
+            await waitForModalDismiss();
             result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ImagePicker.MediaTypeOptions.Images,
                 allowsMultipleSelection: true,

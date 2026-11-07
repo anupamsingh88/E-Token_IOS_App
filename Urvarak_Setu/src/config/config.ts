@@ -12,10 +12,11 @@
 // export const API_BASE_URL = 'http://192.168.1.38:8080/backend';
 // export const API_BASE_URL = 'http://192.168.29.97:8080/backend';
 // export const API_BASE_URL = 'http://192.168.1.67:8080/backend';
-// export const API_BASE_URL = 'http://192.168.1.105:8080/backend';
+export const API_BASE_URL = 'http://192.168.1.105:8080/backend';
 // export const API_BASE_URL = 'http://192.168.0.129:8080/backend';
 
-export const API_BASE_URL = 'https://risingayodhya.com/Urvarak/backend';
+// export const API_BASE_URL = 'https://risingayodhya.com/Urvarak/backend';
+
 
 /**
  * API Endpoints
